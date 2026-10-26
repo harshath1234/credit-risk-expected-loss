@@ -1,0 +1,12 @@
+feature,csi,status
+mo_sin_old_rev_tl_op,0.027672403912929987,stable
+percent_bc_gt_75,0.026277211137455368,stable
+dti,0.023686582070190056,stable
+acc_open_past_24mths,0.018165787556444844,stable
+bc_open_to_buy,0.011914101063658743,stable
+tot_hi_cred_lim,0.00819832948700621,stable
+loan_to_income,0.004058881273637694,stable
+mo_sin_rcnt_tl,0.003891613279919561,stable
+home_ownership,0.0038202209389398938,stable
+mths_since_recent_inq,0.0034964746596565857,stable
+annual_inc,0.003107709308650438,stable

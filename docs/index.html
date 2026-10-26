@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lending Club Expected Loss · Harshath Udayakumar</title>
+<meta name="description" content="Credit risk expected loss model (PD scorecard, LGD, EAD) on 546K Lending Club loans, validated out-of-time on 2015 issues.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<style>
+/* Layout: one centered column (max 1200px); header, tab bar, then a responsive card grid. */
+:root {
+  --color-bg: #f7f7f5; --color-panel: #ffffff; --color-fg: #16181d; --color-fg-muted: #5b606b;
+  --color-border-line: #e3e3df; --color-ok: #1b7a43; --color-warn: #9a6100; --color-bad: #c03a39;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #6250d6;
+  --cds-chart-grid: #ececea; --cds-chart-axis: #b9bab5; --cds-chart-reference: #8b8d93; --cds-chart-muted: #c9cbcf;
+  --cds-surface-popover: #ffffff; --cds-border: #dcdcd8; --cds-shadow-popover: 0 6px 20px rgba(20, 24, 32, .12);
+  --cds-text-secondary: #5b606b;
+  --font-anthropic-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-anthropic-serif: "Newsreader", Georgia, "Times New Roman", serif;
+  --cds-font-size-caption: 0.8125rem; --cds-font-size-body: 0.9375rem; --cds-font-size-heading: 1rem; --cds-font-size-title: 1.75rem;
+  --cds-font-weight-medium: 500;
+  --cds-gap-xs: 4px; --cds-gap-sm: 8px; --cds-gap-md: 16px; --cds-gap-lg: 24px; --cds-gap-xl: 32px;
+  --cds-pad-xs: 4px; --cds-pad-sm: 8px; --cds-pad-md: 12px; --cds-pad-lg: 18px; --cds-pad-xl: 28px;
+  --cds-radius: 8px; --cds-dur-slow: 300ms;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #111317; --color-panel: #1a1d22; --color-fg: #eceef1; --color-fg-muted: #a3a8b2;
+    --color-border-line: #2c3038; --color-ok: #56c17f; --color-warn: #e0a641; --color-bad: #ee7a78;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #9085e9;
+    --cds-chart-grid: #262a31; --cds-chart-axis: #4a4f59; --cds-chart-reference: #8a909b; --cds-chart-muted: #4b515c;
+    --cds-surface-popover: #22262c; --cds-border: #353a43; --cds-shadow-popover: 0 6px 20px rgba(0, 0, 0, .45);
+    --cds-text-secondary: #a3a8b2;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--color-bg); color: var(--color-fg); font-family: var(--font-anthropic-sans); font-size: 15px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0 48px; }
+#dash-root { max-width: 1200px; margin-inline: auto; }
+.site-bar { max-width: 1200px; margin-inline: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  padding-block: 18px 22px; font-size: 0.8125rem; color: var(--color-fg-muted); }
+.site-bar a { color: var(--color-fg); text-decoration: none; border-bottom: 1px solid var(--color-border-line); }
+.site-bar a:hover, .site-bar a:focus-visible { border-bottom-color: var(--color-fg); }
+.site-bar nav { display: flex; flex-wrap: wrap; gap: 16px; }
+.site-foot { max-width: 1200px; margin: 40px auto 0; font-size: 0.8125rem; color: var(--color-fg-muted); line-height: 1.6; border-top: 1px solid var(--color-border-line); padding-top: 16px; }
+.site-foot a { color: var(--color-fg); }
+#dash-root .dash-skeleton { color: transparent; }
+
+#dash-root .el-wrap { display: flex; flex-direction: column; gap: var(--cds-gap-lg); font-family: var(--font-anthropic-sans); color: var(--color-fg); }
+#dash-root .el-head { display: flex; flex-direction: column; gap: var(--cds-gap-xs); }
+#dash-root .el-title { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; text-wrap: balance; }
+#dash-root .el-takeaway { color: var(--color-fg-muted); font-size: var(--cds-font-size-body); margin: 0; max-width: 72ch; line-height: 1.5; }
+#dash-root .el-takeaway b, #dash-root .el-note b { font-weight: 600; color: var(--color-fg); }
+#dash-root .el-tabs { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xs); border-bottom: 1px solid var(--color-border-line); }
+#dash-root .el-tab { appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; padding: var(--cds-pad-sm) var(--cds-pad-md); font: inherit; font-size: var(--cds-font-size-body); color: var(--color-fg-muted); cursor: pointer; margin-bottom: -1px; }
+#dash-root .el-tab[aria-selected="true"] { color: var(--color-fg); border-bottom-color: var(--color-fg); font-weight: var(--cds-font-weight-medium); }
+#dash-root .el-tab:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+#dash-root .el-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr)); gap: var(--cds-gap-md); }
+#dash-root .el-kpi { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-md) var(--cds-pad-lg); display: flex; flex-direction: column; gap: var(--cds-gap-xs); min-width: 0; }
+#dash-root .el-kpi-label { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+#dash-root .el-kpi-value { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); font-variant-numeric: tabular-nums; line-height: 1.1; }
+#dash-root .el-kpi-sub { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); font-variant-numeric: tabular-nums; }
+#dash-root .el-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr)); gap: var(--cds-gap-md); }
+#dash-root .el-card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: flex; flex-direction: column; gap: var(--cds-gap-sm); min-width: 0; position: relative; }
+#dash-root .el-card.el-wide { grid-column: 1 / -1; }
+#dash-root .el-card h3 { margin: 0; font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); }
+#dash-root .el-note { margin: 0; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); line-height: 1.5; }
+#dash-root .el-chart { min-height: 260px; position: relative; }
+#dash-root .el-chart.el-tall { min-height: 420px; }
+#dash-root .el-legend { display: flex; flex-wrap: wrap; gap: var(--cds-gap-md); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+#dash-root .el-legend span { display: inline-flex; align-items: center; gap: 6px; }
+#dash-root .el-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+#dash-root .el-legend i.el-line { height: 2px; border-radius: 1px; width: 14px; }
+#dash-root .el-tablebox { overflow: auto; max-height: 26rem; }
+#dash-root table.el-table { width: 100%; min-width: 30rem; border-collapse: collapse; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+#dash-root .el-table th { position: sticky; top: 0; background: var(--color-panel); text-align: right; font-weight: var(--cds-font-weight-medium); color: var(--color-fg-muted); padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); white-space: nowrap; }
+#dash-root .el-table td { text-align: right; padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); white-space: nowrap; }
+#dash-root .el-table th:first-child, #dash-root .el-table td:first-child { text-align: left; }
+#dash-root .el-table td.el-text, #dash-root .el-table th.el-text { text-align: left; white-space: nowrap; }
+#dash-root .el-pill { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--color-border-line); font-size: var(--cds-font-size-caption); }
+#dash-root .el-pill.el-good { color: var(--color-ok); }
+#dash-root .el-pill.el-warn { color: var(--color-warn); }
+#dash-root .el-pill.el-bad { color: var(--color-bad); }
+#dash-root .el-controls { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: center; font-size: var(--cds-font-size-caption); }
+#dash-root .el-controls select { font: inherit; padding: 4px 8px; border-radius: var(--cds-radius); border: 1px solid var(--color-border-line); background: var(--color-bg); color: var(--color-fg); }
+#dash-root .el-tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); white-space: nowrap; z-index: 5; font-variant-numeric: tabular-nums; }
+#dash-root .el-tip .el-tip-h { color: var(--cds-text-secondary); margin-bottom: 2px; }
+#dash-root .el-tip .el-tip-r { display: flex; align-items: center; gap: 6px; }
+#dash-root .el-tip .el-tip-r i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+#dash-root .el-fail { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: inherit; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+#dash-root .el-fail::before { content: ""; width: .375rem; height: .375rem; border-radius: 50%; background: var(--color-bad); }
+#dash-root [data-dash-source-state=empty] { color: transparent; }
+#dash-root [data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+#dash-root .el-section[hidden] { display: none !important; }
+#dash-root svg text { fill: var(--color-fg-muted); font-size: 11px; font-family: var(--font-anthropic-sans); }
+#dash-root svg .el-val { fill: var(--color-fg); }
+</style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script>
+// Embedded results (written by build_site.py from reports/). Do not edit by hand.
+window.EL_DATA = {"summary":[{"sample":"train","label":"Train 2013–14","loans":262992,"bad_rate":0.1319165601995498,"mean_pd":0.13175701049027883,"auc":0.6571209718900954,"gini":0.3142419437801909,"ks":0.22434436600186025,"brier":0.11033023439536636,"hl_p":0.23481707089615972,"exposure":3318130600.0,"expected_loss":201939794.86876845,"el_pct":0.060859507720632956,"realised_loss":208597426.82999998,"realised_pct":0.06286594832343247,"el_to_realised":0.9680838250864078,"pd_ratio":0.9987905255486527,"ead_ratio":0.9994435205626894,"lgd_ratio":0.9962654527788948,"psi":0.0012690460985383114},{"sample":"oot","label":"Out-of-time 2015","loans":282615,"bad_rate":0.14863329971869857,"mean_pd":0.13308888246274903,"auc":0.6648381253186142,"gini":0.3296762506372284,"ks":0.2392557557292832,"brier":0.12134941203705081,"hl_p":6.480835494281408e-138,"exposure":3618292800.0,"expected_loss":220735325.03837878,"el_pct":0.06100537939836676,"realised_loss":267306728.49,"realised_pct":0.07387647801471457,"el_to_realised":0.8257754164487353,"pd_ratio":0.895417666933529,"ead_ratio":0.9753534864272331,"lgd_ratio":0.9883444532916842,"psi":0.0012690460985383114}],"vintages":[{"issue_year":2007,"total":603,"resolved":603,"resolved_share":1.0,"bad_rate_resolved":0.2620232172,"role":"Excluded"},{"issue_year":2008,"total":2393,"resolved":2393,"resolved_share":1.0,"bad_rate_resolved":0.2072712077,"role":"Excluded"},{"issue_year":2009,"total":5281,"resolved":5281,"resolved_share":1.0,"bad_rate_resolved":0.136905889,"role":"Excluded"},{"issue_year":2010,"total":9156,"resolved":9156,"resolved_share":1.0,"bad_rate_resolved":0.1092179991,"role":"Excluded"},{"issue_year":2011,"total":14101,"resolved":14101,"resolved_share":1.0,"bad_rate_resolved":0.1063045174,"role":"Excluded"},{"issue_year":2012,"total":43470,"resolved":43470,"resolved_share":1.0,"bad_rate_resolved":0.135794801,"role":"Excluded"},{"issue_year":2013,"total":100422,"resolved":100422,"resolved_share":1.0,"bad_rate_resolved":0.1232598435,"role":"Train"},{"issue_year":2014,"total":162570,"resolved":162570,"resolved_share":1.0,"bad_rate_resolved":0.1372639478,"role":"Train"},{"issue_year":2015,"total":283173,"resolved":282853,"resolved_share":0.9988699488,"bad_rate_resolved":0.1486567227,"role":"Out-of-time"},{"issue_year":2016,"total":323495,"resolved":215553,"resolved_share":0.6663256001,"bad_rate_resolved":0.2091457785,"role":"Excluded"},{"issue_year":2017,"total":320419,"resolved":120439,"resolved_share":0.3758797075,"bad_rate_resolved":0.1988558523,"role":"Excluded"},{"issue_year":2018,"total":344671,"resolved":34371,"resolved_share":0.0997211834,"bad_rate_resolved":0.1241162608,"role":"Excluded"}],"iv":[{"feature":"annual_inc","iv":0.0905,"n_bins":14,"status":"In scorecard"},{"feature":"tot_hi_cred_lim","iv":0.0791,"n_bins":13,"status":"In scorecard"},{"feature":"bc_open_to_buy","iv":0.0786,"n_bins":10,"status":"In scorecard"},{"feature":"avg_cur_bal","iv":0.0737,"n_bins":10,"status":"Correlated"},{"feature":"total_rev_hi_lim","iv":0.0577,"n_bins":11,"status":"Correlated"},{"feature":"acc_open_past_24mths","iv":0.0564,"n_bins":8,"status":"In scorecard"},{"feature":"dti","iv":0.0524,"n_bins":13,"status":"In scorecard"},{"feature":"num_tl_op_past_12m","iv":0.0492,"n_bins":6,"status":"Correlated"},{"feature":"mort_acc","iv":0.0474,"n_bins":6,"status":"Not significant"},{"feature":"loan_to_income","iv":0.0427,"n_bins":9,"status":"In scorecard"},{"feature":"home_ownership","iv":0.0424,"n_bins":3,"status":"In scorecard"},{"feature":"mo_sin_rcnt_tl","iv":0.0377,"n_bins":11,"status":"In scorecard"},{"feature":"mo_sin_old_rev_tl_op","iv":0.0358,"n_bins":8,"status":"In scorecard"},{"feature":"percent_bc_gt_75","iv":0.0357,"n_bins":8,"status":"In scorecard"},{"feature":"mths_since_recent_inq","iv":0.0324,"n_bins":9,"status":"In scorecard"},{"feature":"bc_util","iv":0.0297,"n_bins":11,"status":"Correlated"},{"feature":"inq_last_6mths","iv":0.0283,"n_bins":4,"status":"Correlated"},{"feature":"credit_hist_months","iv":0.0222,"n_bins":9,"status":"Correlated"},{"feature":"emp_length_yrs","iv":0.0196,"n_bins":8,"status":"IV below 0.02"},{"feature":"revol_bal","iv":0.0194,"n_bins":9,"status":"IV below 0.02"},{"feature":"purpose","iv":0.0192,"n_bins":4,"status":"IV below 0.02"},{"feature":"revol_util","iv":0.0189,"n_bins":10,"status":"IV below 0.02"},{"feature":"addr_state","iv":0.0157,"n_bins":10,"status":"IV below 0.02"},{"feature":"verification_status","iv":0.0103,"n_bins":3,"status":"IV below 0.02"},{"feature":"total_acc","iv":0.0102,"n_bins":8,"status":"IV below 0.02"},{"feature":"loan_amnt","iv":0.0082,"n_bins":6,"status":"IV below 0.02"},{"feature":"pub_rec","iv":0.0023,"n_bins":2,"status":"IV below 0.02"},{"feature":"pub_rec_bankruptcies","iv":0.0016,"n_bins":2,"status":"IV below 0.02"},{"feature":"delinq_2yrs","iv":0.0015,"n_bins":3,"status":"IV below 0.02"},{"feature":"mths_since_last_delinq","iv":0.0014,"n_bins":6,"status":"IV below 0.02"},{"feature":"pct_tl_nvr_dlq","iv":0.001,"n_bins":3,"status":"IV below 0.02"},{"feature":"open_acc","iv":0.0002,"n_bins":6,"status":"IV below 0.02"}],"coefficients":[{"feature":"annual_inc","coef":-0.2867273024,"std_err":0.0269353135,"p_value":1.839189938e-26},{"feature":"tot_hi_cred_lim","coef":-0.5382160577,"std_err":0.0341889155,"p_value":7.743262229e-56},{"feature":"bc_open_to_buy","coef":-0.635811256,"std_err":0.0293331062,"p_value":3.490303092e-104},{"feature":"acc_open_past_24mths","coef":-0.9015829681,"std_err":0.0294226085,"p_value":3.323997023e-206},{"feature":"dti","coef":-0.5035391291,"std_err":0.0283770379,"p_value":1.897533312e-70},{"feature":"loan_to_income","coef":-0.8596049755,"std_err":0.0311190815,"p_value":5.877808843e-168},{"feature":"home_ownership","coef":-0.3786954165,"std_err":0.0368688801,"p_value":9.480785323e-25},{"feature":"mo_sin_rcnt_tl","coef":-0.4678853009,"std_err":0.0365623538,"p_value":1.705966557e-37},{"feature":"mo_sin_old_rev_tl_op","coef":-0.3827151123,"std_err":0.0323657157,"p_value":2.909151703e-32},{"feature":"percent_bc_gt_75","coef":-0.574813161,"std_err":0.0401552549,"p_value":1.769534763e-46},{"feature":"mths_since_recent_inq","coef":-0.8113475511,"std_err":0.0358879036,"p_value":3.629655721e-113}],"points":[{"feature":"annual_inc","bin":"<= 26,000","woe":-0.553236716,"points":45,"share_train":0.0507543956,"bad_rate_train":0.2090200779},{"feature":"annual_inc","bin":"(26,000, 36,000]","woe":-0.3950749953,"points":46,"share_train":0.1063796617,"bad_rate_train":0.1840797798},{"feature":"annual_inc","bin":"(36,000, 40,000]","woe":-0.2604779089,"points":47,"share_train":0.0604391008,"bad_rate_train":0.1647058824},{"feature":"annual_inc","bin":"(40,000, 46,800]","woe":-0.166922275,"points":48,"share_train":0.0827971954,"bad_rate_train":0.152238806},{"feature":"annual_inc","bin":"(46,800, 50,000]","woe":-0.1021071023,"points":48,"share_train":0.0661731155,"bad_rate_train":0.1440556226},{"feature":"annual_inc","bin":"(50,000, 57,000]","woe":-0.0204578524,"points":49,"share_train":0.083789621,"bad_rate_train":0.1342802687},{"feature":"annual_inc","bin":"(57,000, 60,000]","woe":-0.0119613027,"points":49,"share_train":0.053746882,"bad_rate_train":0.1332861691},{"feature":"annual_inc","bin":"(60,000, 65,000]","woe":0.0467288375,"points":50,"share_train":0.0584238304,"bad_rate_train":0.1266514806},{"feature":"annual_inc","bin":"(65,000, 70,000]","woe":0.1115160466,"points":50,"share_train":0.052530115,"bad_rate_train":0.1196525516},{"feature":"annual_inc","bin":"(70,000, 80,000]","woe":0.1685429326,"points":51,"share_train":0.0944705542,"bad_rate_train":0.1137854699},{"feature":"annual_inc","bin":"(80,000, 95,000]","woe":0.3400761127,"points":52,"share_train":0.0956074709,"bad_rate_train":0.0975978365},{"feature":"annual_inc","bin":"(95,000, 105,000]","woe":0.3650736513,"points":52,"share_train":0.0503779583,"bad_rate_train":0.0954034267},{"feature":"annual_inc","bin":"(105,000, 120,000]","woe":0.4300480123,"points":53,"share_train":0.0502676888,"bad_rate_train":0.0899394856},{"feature":"annual_inc","bin":"> 120,000","woe":0.4765095553,"points":53,"share_train":0.0942424104,"bad_rate_train":0.0862215049},{"feature":"tot_hi_cred_lim","bin":"<= 15,430","woe":-0.3433758184,"points":44,"share_train":0.050001521,"bad_rate_train":0.1764258555},{"feature":"tot_hi_cred_lim","bin":"(15,430, 29,251]","woe":-0.3134815719,"points":44,"share_train":0.0999992395,"bad_rate_train":0.1721358227},{"feature":"tot_hi_cred_lim","bin":"(29,251, 35,269]","woe":-0.277438104,"points":45,"share_train":0.0500091258,"bad_rate_train":0.167046837},{"feature":"tot_hi_cred_lim","bin":"(35,269, 41,500]","woe":-0.2211197236,"points":46,"share_train":0.0500129281,"bad_rate_train":0.1593552802},{"feature":"tot_hi_cred_lim","bin":"(41,500, 55,817]","woe":-0.1583975849,"points":47,"share_train":0.0999764251,"bad_rate_train":0.1511428897},{"feature":"tot_hi_cred_lim","bin":"(55,817, 64,910]","woe":-0.1147706438,"points":47,"share_train":0.0500053234,"bad_rate_train":0.1456163029},{"feature":"tot_hi_cred_lim","bin":"(64,910, 114,261]","woe":-0.0709077564,"points":48,"share_train":0.1499969581,"bad_rate_train":0.1402605962},{"feature":"tot_hi_cred_lim","bin":"(114,261, 169,264]","woe":0.0515622028,"points":50,"share_train":0.0999992395,"bad_rate_train":0.1261264687},{"feature":"tot_hi_cred_lim","bin":"(169,264, 197,700]","woe":0.1219474471,"points":51,"share_train":0.050001521,"bad_rate_train":0.1185551331},{"feature":"tot_hi_cred_lim","bin":"(197,700, 263,410]","woe":0.2375966364,"points":53,"share_train":0.0999954371,"bad_rate_train":0.1070043349},{"feature":"tot_hi_cred_lim","bin":"(263,410, 306,555]","woe":0.3342244443,"points":54,"share_train":0.050001521,"bad_rate_train":0.0980988593},{"feature":"tot_hi_cred_lim","bin":"(306,555, 465,858]","woe":0.4932916035,"points":57,"share_train":0.0999992395,"bad_rate_train":0.0849081714},{"feature":"tot_hi_cred_lim","bin":"> 465,858","woe":0.7051503518,"points":60,"share_train":0.050001521,"bad_rate_train":0.0698098859},{"feature":"bc_open_to_buy","bin":"<= 103","woe":-0.4338465575,"points":41,"share_train":0.0496631076,"bad_rate_train":0.1899548273},{"feature":"bc_open_to_buy","bin":"(103, 774]","woe":-0.251465044,"points":45,"share_train":0.1485368376,"bad_rate_train":0.1634753225},{"feature":"bc_open_to_buy","bin":"(774, 2,335]","woe":-0.1682111304,"points":46,"share_train":0.1979185679,"bad_rate_train":0.152408215},{"feature":"bc_open_to_buy","bin":"(2,335, 3,531]","woe":-0.0684955637,"points":48,"share_train":0.0990258259,"bad_rate_train":0.139960834},{"feature":"bc_open_to_buy","bin":"(3,531, 4,288]","woe":-0.01164028,"points":49,"share_train":0.0495414309,"bad_rate_train":0.1332412311},{"feature":"bc_open_to_buy","bin":"(4,288, 5,208]","woe":0.0022960938,"points":49,"share_train":0.0495376285,"bad_rate_train":0.1316395456},{"feature":"bc_open_to_buy","bin":"(5,208, 9,728]","woe":0.1103705298,"points":51,"share_train":0.1484950113,"bad_rate_train":0.1197859319},{"feature":"bc_open_to_buy","bin":"(9,728, 22,013]","woe":0.3274462582,"points":55,"share_train":0.1485254304,"bad_rate_train":0.0987173907},{"feature":"bc_open_to_buy","bin":"> 22,013","woe":0.6722201914,"points":62,"share_train":0.0990296283,"bad_rate_train":0.0719935494},{"feature":"bc_open_to_buy","bin":"Missing","woe":-0.1635763609,"points":46,"share_train":0.0097265316,"bad_rate_train":0.1516810008},{"feature":"acc_open_past_24mths","bin":"<= 1","woe":0.379209996,"points":59,"share_train":0.1543088763,"bad_rate_train":0.094204327},{"feature":"acc_open_past_24mths","bin":"(1, 2]","woe":0.2361750818,"points":55,"share_train":0.1461489323,"bad_rate_train":0.1071391404},{"feature":"acc_open_past_24mths","bin":"(2, 3]","woe":0.0923008409,"points":52,"share_train":0.161153191,"bad_rate_train":0.1217026096},{"feature":"acc_open_past_24mths","bin":"(3, 4]","woe":-0.0177815344,"points":49,"share_train":0.1477611486,"bad_rate_train":0.1339680906},{"feature":"acc_open_past_24mths","bin":"(4, 5]","woe":-0.0836480573,"points":47,"share_train":0.1216652978,"bad_rate_train":0.1417945432},{"feature":"acc_open_past_24mths","bin":"(5, 6]","woe":-0.1657447143,"points":45,"share_train":0.0913601935,"bad_rate_train":0.1520789112},{"feature":"acc_open_past_24mths","bin":"(6, 7]","woe":-0.1993022565,"points":44,"share_train":0.063773803,"bad_rate_train":0.1564512282},{"feature":"acc_open_past_24mths","bin":"> 7","woe":-0.4089575783,"points":39,"share_train":0.1138285575,"bad_rate_train":0.1861638161},{"feature":"dti","bin":"<= 5.01","woe":0.3545541039,"points":54,"share_train":0.0501384073,"bad_rate_train":0.0963142727},{"feature":"dti","bin":"(5.01, 8.7]","woe":0.2882309376,"points":53,"share_train":0.0999117844,"bad_rate_train":0.1022606181},{"feature":"dti","bin":"(8.7, 10.08]","woe":0.2463217554,"points":53,"share_train":0.0500737665,"bad_rate_train":0.1061584023},{"feature":"dti","bin":"(10.08, 11.3]","woe":0.2443318824,"points":53,"share_train":0.0500205329,"bad_rate_train":0.1063473964},{"feature":"dti","bin":"(11.3, 13.54]","woe":0.1985023223,"points":52,"share_train":0.0999688203,"bad_rate_train":0.1107983721},{"feature":"dti","bin":"(13.54, 14.62]","woe":0.1467921202,"points":51,"share_train":0.0501270001,"bad_rate_train":0.115982705},{"feature":"dti","bin":"(14.62, 15.71]","woe":0.1181383994,"points":51,"share_train":0.0503133175,"bad_rate_train":0.1189540508},{"feature":"dti","bin":"(15.71, 19.06]","woe":0.0274334598,"points":50,"share_train":0.1496281256,"bad_rate_train":0.1288150238},{"feature":"dti","bin":"(19.06, 21.53]","woe":-0.0796825815,"points":48,"share_train":0.099850946,"bad_rate_train":0.1413175933},{"feature":"dti","bin":"(21.53, 22.94]","woe":-0.1355705465,"points":47,"share_train":0.050203048,"bad_rate_train":0.1482238885},{"feature":"dti","bin":"(22.94, 26.19]","woe":-0.2098396121,"points":46,"share_train":0.0997672933,"bad_rate_train":0.157862642},{"feature":"dti","bin":"(26.19, 28.21]","woe":-0.3106287349,"points":45,"share_train":0.0500661617,"bad_rate_train":0.1717171717},{"feature":"dti","bin":"> 28.21","woe":-0.3811486976,"points":44,"share_train":0.0999307964,"bad_rate_train":0.1819945969},{"feature":"loan_to_income","bin":"<= 0.07308","woe":0.2867571077,"points":56,"share_train":0.1000068443,"bad_rate_train":0.102391544},{"feature":"loan_to_income","bin":"(0.07308, 0.1318]","woe":0.1805835637,"points":54,"share_train":0.2000517126,"bad_rate_train":0.1125788793},{"feature":"loan_to_income","bin":"(0.1318, 0.1578]","woe":0.1356138275,"points":53,"share_train":0.0999422036,"bad_rate_train":0.1171435094},{"feature":"loan_to_income","bin":"(0.1578, 0.2]","woe":0.0742804643,"points":51,"share_train":0.1671723855,"bad_rate_train":0.1236438076},{"feature":"loan_to_income","bin":"(0.2, 0.2298]","woe":0.0282313048,"points":50,"share_train":0.0828352193,"bad_rate_train":0.1287124168},{"feature":"loan_to_income","bin":"(0.2298, 0.2667]","woe":-0.0408494542,"points":48,"share_train":0.1016646894,"bad_rate_train":0.1366645473},{"feature":"loan_to_income","bin":"(0.2667, 0.3176]","woe":-0.2043660748,"points":44,"share_train":0.0983451968,"bad_rate_train":0.157129601},{"feature":"loan_to_income","bin":"(0.3176, 0.3462]","woe":-0.3336205197,"points":41,"share_train":0.0502334672,"bad_rate_train":0.1750056771},{"feature":"loan_to_income","bin":"> 0.3462","woe":-0.369307557,"points":40,"share_train":0.0997482813,"bad_rate_train":0.1802310067},{"feature":"home_ownership","bin":"OTHER / MORTGAGE","woe":0.2262568364,"points":52,"share_train":0.4809766077,"bad_rate_train":0.1080929379},{"feature":"home_ownership","bin":"OWN","woe":-0.0608686228,"points":49,"share_train":0.0957747764,"bad_rate_train":0.1390344609},{"feature":"home_ownership","bin":"RENT","woe":-0.2062434789,"points":47,"share_train":0.4232486159,"bad_rate_train":0.1573788754},{"feature":"mo_sin_rcnt_tl","bin":"<= 1","woe":-0.28233146,"points":45,"share_train":0.0982007057,"bad_rate_train":0.1677379385},{"feature":"mo_sin_rcnt_tl","bin":"(1, 2]","woe":-0.2098841629,"points":46,"share_train":0.1038358581,"bad_rate_train":0.1578658269},{"feature":"mo_sin_rcnt_tl","bin":"(2, 3]","woe":-0.1353931065,"points":47,"share_train":0.1016456774,"bad_rate_train":0.1482118809},{"feature":"mo_sin_rcnt_tl","bin":"(3, 4]","woe":-0.0868990488,"points":48,"share_train":0.0897175579,"bad_rate_train":0.1421911422},{"feature":"mo_sin_rcnt_tl","bin":"(4, 5]","woe":-0.0210389852,"points":49,"share_train":0.0793636308,"bad_rate_train":0.13434266},{"feature":"mo_sin_rcnt_tl","bin":"(5, 6]","woe":0.0140990465,"points":49,"share_train":0.0704127882,"bad_rate_train":0.1303056486},{"feature":"mo_sin_rcnt_tl","bin":"(6, 7]","woe":0.0534373278,"points":50,"share_train":0.0637814078,"bad_rate_train":0.1259091451},{"feature":"mo_sin_rcnt_tl","bin":"(7, 8]","woe":0.0584575969,"points":50,"share_train":0.0562982904,"bad_rate_train":0.125354586},{"feature":"mo_sin_rcnt_tl","bin":"(8, 10]","woe":0.1073322629,"points":51,"share_train":0.0872231855,"bad_rate_train":0.1201011378},{"feature":"mo_sin_rcnt_tl","bin":"(10, 14]","woe":0.1480606353,"points":51,"share_train":0.1084937945,"bad_rate_train":0.1158658396},{"feature":"mo_sin_rcnt_tl","bin":"> 14","woe":0.3814315159,"points":54,"share_train":0.1410271035,"bad_rate_train":0.094017094},{"feature":"mo_sin_old_rev_tl_op","bin":"<= 63","woe":-0.4780061759,"points":44,"share_train":0.0515186774,"bad_rate_train":0.1968410953},{"feature":"mo_sin_old_rev_tl_op","bin":"(63, 92]","woe":-0.2431972335,"points":47,"share_train":0.0993110057,"bad_rate_train":0.1623401486},{"feature":"mo_sin_old_rev_tl_op","bin":"(92, 124]","woe":-0.100798794,"points":48,"share_train":0.1499589341,"bad_rate_train":0.1438967493},{"feature":"mo_sin_old_rev_tl_op","bin":"(124, 144]","woe":-0.0378580877,"points":49,"share_train":0.1005619943,"bad_rate_train":0.1363103566},{"feature":"mo_sin_old_rev_tl_op","bin":"(144, 154]","woe":0.0330235077,"points":50,"share_train":0.0539065827,"bad_rate_train":0.1281653382},{"feature":"mo_sin_old_rev_tl_op","bin":"(154, 196]","woe":0.0664096888,"points":50,"share_train":0.1974204539,"bad_rate_train":0.1244992296},{"feature":"mo_sin_old_rev_tl_op","bin":"(196, 227]","woe":0.0854819227,"points":50,"share_train":0.0994174728,"bad_rate_train":0.1224279048},{"feature":"mo_sin_old_rev_tl_op","bin":"> 227","woe":0.2300054201,"points":52,"share_train":0.2479048792,"bad_rate_train":0.1077350185},{"feature":"percent_bc_gt_75","bin":"<= 14.3","woe":0.3160366228,"points":54,"share_train":0.2045727627,"bad_rate_train":0.0997379231},{"feature":"percent_bc_gt_75","bin":"(14.3, 25]","woe":0.1721332559,"points":52,"share_train":0.0947443268,"bad_rate_train":0.1134165429},{"feature":"percent_bc_gt_75","bin":"(25, 33.3]","woe":0.0813322395,"points":51,"share_train":0.085101448,"bad_rate_train":0.122872079},{"feature":"percent_bc_gt_75","bin":"(33.3, 50]","woe":-0.0031044182,"points":49,"share_train":0.1727923283,"bad_rate_train":0.132275598},{"feature":"percent_bc_gt_75","bin":"(50, 66.7]","woe":-0.0951267109,"points":48,"share_train":0.124482874,"bad_rate_train":0.1431975075},{"feature":"percent_bc_gt_75","bin":"(66.7, 75]","woe":-0.1563512446,"points":47,"share_train":0.055575835,"bad_rate_train":0.150862069},{"feature":"percent_bc_gt_75","bin":"> 75","woe":-0.205428284,"points":46,"share_train":0.2526198516,"bad_rate_train":0.1572768186},{"feature":"percent_bc_gt_75","bin":"Missing","woe":-0.1479443755,"points":47,"share_train":0.0101105737,"bad_rate_train":0.149680331},{"feature":"mths_since_recent_inq","bin":"<= 1","woe":-0.2533657724,"points":43,"share_train":0.1724995437,"bad_rate_train":0.1637349557},{"feature":"mths_since_recent_inq","bin":"(1, 2]","woe":-0.1456823313,"points":46,"share_train":0.0785613251,"bad_rate_train":0.1495087363},{"feature":"mths_since_recent_inq","bin":"(2, 3]","woe":-0.101468622,"points":47,"share_train":0.0702530875,"bad_rate_train":0.1439705564},{"feature":"mths_since_recent_inq","bin":"(3, 4]","woe":-0.0790485095,"points":47,"share_train":0.0649943725,"bad_rate_train":0.141227403},{"feature":"mths_since_recent_inq","bin":"(4, 6]","woe":-0.0257558434,"points":49,"share_train":0.1118779278,"bad_rate_train":0.1348944703},{"feature":"mths_since_recent_inq","bin":"(6, 9]","woe":0.0479790367,"points":50,"share_train":0.1378559044,"bad_rate_train":0.1265204799},{"feature":"mths_since_recent_inq","bin":"(9, 11]","woe":0.0978916778,"points":52,"share_train":0.0680438949,"bad_rate_train":0.121095278},{"feature":"mths_since_recent_inq","bin":"> 11","woe":0.1725711079,"points":53,"share_train":0.194443177,"bad_rate_train":0.1133817001},{"feature":"mths_since_recent_inq","bin":"Missing","woe":0.350061159,"points":57,"share_train":0.1014707672,"bad_rate_train":0.0967173799}],"calibration":[{"sample":"train","band":1,"n":26300,"bads":1117,"pd_mean":0.0444926106,"observed_rate":0.0424714829,"binom_p":0.1129547593},{"sample":"train","band":2,"n":26299,"bads":1720,"pd_mean":0.0669302988,"observed_rate":0.0654017263,"binom_p":0.3297024688},{"sample":"train","band":3,"n":26299,"bads":2138,"pd_mean":0.0831704038,"observed_rate":0.0812958668,"binom_p":0.2738736523},{"sample":"train","band":4,"n":26299,"bads":2628,"pd_mean":0.0981657438,"observed_rate":0.0999277539,"binom_p":0.3352009007},{"sample":"train","band":5,"n":26299,"bads":3036,"pd_mean":0.1131814641,"observed_rate":0.1154416518,"binom_p":0.2468265527},{"sample":"train","band":6,"n":26299,"bads":3468,"pd_mean":0.1293577293,"observed_rate":0.1318681319,"binom_p":0.2252362972},{"sample":"train","band":7,"n":26299,"bads":3943,"pd_mean":0.1473090284,"observed_rate":0.1499296551,"binom_p":0.2299411271},{"sample":"train","band":8,"n":26299,"bads":4416,"pd_mean":0.1696167633,"observed_rate":0.1679151299,"binom_p":0.46970541},{"sample":"train","band":9,"n":26299,"bads":5256,"pd_mean":0.1999535641,"observed_rate":0.1998555078,"binom_p":0.9754014985},{"sample":"train","band":10,"n":26300,"bads":6971,"pd_mean":0.2653907355,"observed_rate":0.2650570342,"binom_p":0.9055107406},{"sample":"oot","band":1,"n":28262,"bads":1233,"pd_mean":0.0438377903,"observed_rate":0.0436274857,"binom_p":0.8844906341},{"sample":"oot","band":2,"n":28261,"bads":2055,"pd_mean":0.0662131193,"observed_rate":0.072715049,"binom_p":1.48516e-05},{"sample":"oot","band":3,"n":28262,"bads":2570,"pd_mean":0.0825677302,"observed_rate":0.0909348241,"binom_p":4.734e-07},{"sample":"oot","band":4,"n":28261,"bads":3059,"pd_mean":0.097908106,"observed_rate":0.1082410389,"binom_p":8.6e-09},{"sample":"oot","band":5,"n":28262,"bads":3614,"pd_mean":0.1135396585,"observed_rate":0.127874885,"binom_p":0.0},{"sample":"oot","band":6,"n":28261,"bads":4200,"pd_mean":0.1302026416,"observed_rate":0.1486146987,"binom_p":1.755927769e-19},{"sample":"oot","band":7,"n":28261,"bads":4810,"pd_mean":0.1491112909,"observed_rate":0.1701992145,"binom_p":1.457297464e-22},{"sample":"oot","band":8,"n":28262,"bads":5651,"pd_mean":0.1719867689,"observed_rate":0.1999504635,"binom_p":2.800351062e-34},{"sample":"oot","band":9,"n":28261,"bads":6431,"pd_mean":0.2037778668,"observed_rate":0.2275574113,"binom_p":1.276212189e-22},{"sample":"oot","band":10,"n":28262,"bads":8383,"pd_mean":0.271743207,"observed_rate":0.2966173661,"binom_p":1.209641359e-20}],"gains":[{"band":1,"n":28262,"bads":8370,"score_min":486.0,"score_max":523.0,"bad_rate":0.2961573845,"cum_bad_capture":0.199257249,"lift":1.9925372378},{"band":2,"n":28261,"bads":6488,"score_min":523.0,"score_max":530.0,"bad_rate":0.229574325,"cum_bad_capture":0.3537113746,"lift":1.5445685824},{"band":3,"n":28262,"bads":5593,"score_min":530.0,"score_max":535.0,"bad_rate":0.1978982379,"cum_bad_capture":0.4868590201,"lift":1.3314528998},{"band":4,"n":28261,"bads":4859,"score_min":535.0,"score_max":540.0,"bad_rate":0.1719330526,"cum_bad_capture":0.6025329715,"lift":1.1567599787},{"band":5,"n":28262,"bads":4140,"score_min":540.0,"score_max":544.0,"bad_rate":0.1464864482,"cum_bad_capture":0.7010903204,"lift":0.9855560531},{"band":6,"n":28261,"bads":3656,"score_min":544.0,"score_max":549.0,"bad_rate":0.1293655568,"cum_bad_capture":0.7881255059,"lift":0.870367253},{"band":7,"n":28261,"bads":3047,"score_min":549.0,"score_max":554.0,"bad_rate":0.1078164255,"cum_bad_capture":0.8606627625,"lift":0.7253853993},{"band":8,"n":28262,"bads":2564,"score_min":554.0,"score_max":560.0,"bad_rate":0.0907225249,"cum_bad_capture":0.9217016617,"lift":0.6103781933},{"band":9,"n":28261,"bads":2066,"score_min":560.0,"score_max":568.0,"bad_rate":0.073104278,"cum_bad_capture":0.9708851117,"lift":0.4918432015},{"band":10,"n":28262,"bads":1223,"score_min":568.0,"score_max":612.0,"bad_rate":0.0432736537,"cum_bad_capture":1.0,"lift":0.2911437326}],"psi":[{"band":1,"expected_pct":0.1121070717,"actual_pct":0.1209676861,"psi_band":0.0006740184},{"band":2,"expected_pct":0.0908364627,"actual_pct":0.0920803305,"psi_band":1.69173e-05},{"band":3,"expected_pct":0.0971066154,"actual_pct":0.0962910058,"psi_band":6.8793e-06},{"band":4,"expected_pct":0.1112743467,"actual_pct":0.108102127,"psi_band":9.1748e-05},{"band":5,"expected_pct":0.0924752958,"actual_pct":0.0900846827,"psi_band":6.26135e-05},{"band":6,"expected_pct":0.1119777902,"actual_pct":0.1076102918,"psi_band":0.0001737577},{"band":7,"expected_pct":0.1007721261,"actual_pct":0.0982088092,"psi_band":6.60461e-05},{"band":8,"expected_pct":0.0844256213,"actual_pct":0.0829336115,"psi_band":2.66033e-05},{"band":9,"expected_pct":0.1068179374,"actual_pct":0.107889824,"psi_band":1.07025e-05},{"band":10,"expected_pct":0.0922167328,"actual_pct":0.0958416312,"psi_band":0.00013976}],"csi":[{"feature":"mo_sin_old_rev_tl_op","csi":0.0276724039},{"feature":"percent_bc_gt_75","csi":0.0262772111},{"feature":"dti","csi":0.0236865821},{"feature":"acc_open_past_24mths","csi":0.0181657876},{"feature":"bc_open_to_buy","csi":0.0119141011},{"feature":"tot_hi_cred_lim","csi":0.0081983295},{"feature":"loan_to_income","csi":0.0040588813},{"feature":"mo_sin_rcnt_tl","csi":0.0038916133},{"feature":"home_ownership","csi":0.0038202209},{"feature":"mths_since_recent_inq","csi":0.0034964747},{"feature":"annual_inc","csi":0.0031077093}],"benchmarks":[{"model":"Scorecard","sample":"train","gini":0.3142419437801909,"auc":0.6571209718900954,"ks":0.22434436600186025},{"model":"Scorecard","sample":"oot","gini":0.3296762506372284,"auc":0.6648381253186142,"ks":0.2392557557292832},{"model":"LightGBM benchmark","sample":"train","gini":0.5135434854548588,"auc":0.7567717427274294,"ks":0.37524662011971777},{"model":"LightGBM benchmark","sample":"oot","gini":0.38087829212045743,"auc":0.6904391460602287,"ks":0.2753111067985845},{"model":"Scorecard + LC sub-grade","sample":"train","gini":0.36112006199302726,"auc":0.6805600309965136,"ks":0.2638418075786981},{"model":"Scorecard + LC sub-grade","sample":"oot","gini":0.3884904340188129,"auc":0.6942452170094064,"ks":0.2834357171745306}],"lgd_ead_models":[{"component":"LGD","model":"Two-stage model","mean_actual":0.8723755724797512,"mean_pred":0.8670891441462149,"rmse":0.15146293781540182,"mae":0.09988912811007397,"r2":0.0005508053593547002},{"component":"LGD","model":"Grade × purpose average","mean_actual":0.8723755724797512,"mean_pred":0.8673515615484069,"rmse":0.15165813955724922,"mae":0.09948393098279285,"r2":-0.0020269861827511004},{"component":"LGD","model":"Overall mean","mean_actual":0.8723755724797512,"mean_pred":0.8673708518420961,"rmse":0.15158730739008106,"mae":0.09943979399981401,"r2":-0.001091208274166311},{"component":"EAD ($)","model":"Ratio model","mean_actual":7298.282385430307,"mean_pred":7118.284471496856,"rmse":3351.981871039778,"mae":2371.850013898062,"r2":0.676418348588182},{"component":"EAD ($)","model":"Grade average","mean_actual":7298.282385430307,"mean_pred":7104.571929940382,"rmse":3363.178746829447,"mae":2382.9847903357368,"r2":0.6742529700388818}],"lgd_ead_by_grade":[{"grade":"A","n":3795,"lgd_actual":0.8726108832,"lgd_pred":0.8674019151,"ead_ratio_actual":0.5051864533,"ead_ratio_pred":0.4918846399},{"grade":"B","n":10870,"lgd_actual":0.8738025448,"lgd_pred":0.8697462504,"ead_ratio_actual":0.5396051574,"ead_ratio_pred":0.5337786599},{"grade":"C","n":15011,"lgd_actual":0.8712192801,"lgd_pred":0.8681436024,"ead_ratio_actual":0.5866106624,"ead_ratio_pred":0.5733226908},{"grade":"D","n":8549,"lgd_actual":0.8718463118,"lgd_pred":0.8652641857,"ead_ratio_actual":0.6308988001,"ead_ratio_pred":0.6156608051},{"grade":"E","n":3092,"lgd_actual":0.8742794919,"lgd_pred":0.8583857375,"ead_ratio_actual":0.66258213,"ead_ratio_pred":0.6532445816},{"grade":"F","n":575,"lgd_actual":0.8720297619,"lgd_pred":0.8617481577,"ead_ratio_actual":0.6919267101,"ead_ratio_pred":0.6865415702},{"grade":"G","n":113,"lgd_actual":0.8705125943,"lgd_pred":0.864304955,"ead_ratio_actual":0.7647338289,"ead_ratio_pred":0.6900023909}],"lgd_hist":[{"lgd_from":0.0,"lgd_to":0.05,"loans":259},{"lgd_from":0.05,"lgd_to":0.1,"loans":17},{"lgd_from":0.1,"lgd_to":0.15,"loans":14},{"lgd_from":0.15,"lgd_to":0.2,"loans":14},{"lgd_from":0.2,"lgd_to":0.25,"loans":27},{"lgd_from":0.25,"lgd_to":0.3,"loans":26},{"lgd_from":0.3,"lgd_to":0.35,"loans":42},{"lgd_from":0.35,"lgd_to":0.4,"loans":59},{"lgd_from":0.4,"lgd_to":0.45,"loans":133},{"lgd_from":0.45,"lgd_to":0.5,"loans":513},{"lgd_from":0.5,"lgd_to":0.55,"loans":582},{"lgd_from":0.55,"lgd_to":0.6,"loans":519},{"lgd_from":0.6,"lgd_to":0.65,"loans":186},{"lgd_from":0.65,"lgd_to":0.7,"loans":172},{"lgd_from":0.7,"lgd_to":0.75,"loans":164},{"lgd_from":0.75,"lgd_to":0.8,"loans":1702},{"lgd_from":0.8,"lgd_to":0.85,"loans":6269},{"lgd_from":0.85,"lgd_to":0.9,"loans":10802},{"lgd_from":0.9,"lgd_to":0.95,"loans":3228},{"lgd_from":0.95,"lgd_to":1.0,"loans":9965}],"el_grade":[{"grade":"A","n":70081,"exposure":1014118775,"el":34680375.863111146,"el_pct":0.0341975484,"realised_loss":23319808.58,"realised_pct":0.0229951453,"mean_pd":0.0835336333,"share_of_el":0.1571129399},{"grade":"B","n":91588,"exposure":1146513475,"el":62822909.06231545,"el_pct":0.0547947411,"realised_loss":63485466.49,"realised_pct":0.05537263,"mean_pd":0.1229203887,"share_of_el":0.2846074096},{"grade":"C","n":77288,"exposure":918885075,"el":70015462.40626608,"el_pct":0.0761961036,"realised_loss":92155481.33,"realised_pct":0.100290541,"mean_pd":0.1587104393,"share_of_el":0.3171919238},{"grade":"D","n":32642,"exposure":401254225,"el":37536463.57325264,"el_pct":0.0935478339,"realised_loss":59892468.33,"realised_pct":0.1492631469,"mean_pd":0.1818685151,"share_of_el":0.1700519098},{"grade":"E","n":9415,"exposure":120976350,"el":13445390.374803666,"el_pct":0.1111406517,"realised_loss":23838639.02,"realised_pct":0.1970520603,"mean_pd":0.2047697609,"share_of_el":0.0609118199},{"grade":"F","n":1357,"exposure":14175550,"el":1897133.712475798,"el_pct":0.1338314007,"realised_loss":3840268.71,"realised_pct":0.2709079161,"mean_pd":0.227861182,"share_of_el":0.0085946086},{"grade":"G","n":244,"exposure":2369350,"el":337590.0461539795,"el_pct":0.1424821348,"realised_loss":774596.03,"realised_pct":0.3269234305,"mean_pd":0.2486966359,"share_of_el":0.0015293884}],"el_band":[{"score_band":1,"n":28262,"exposure":319031075,"el":45329463.78350372,"el_pct":0.1420847915,"realised_loss":52279933.35,"realised_pct":0.1638709751,"mean_pd":0.271743207},{"score_band":2,"n":28261,"exposure":318586625,"el":32663218.697906718,"el_pct":0.1025253923,"realised_loss":39492178.97,"realised_pct":0.1239605679,"mean_pd":0.2037778668},{"score_band":3,"n":28262,"exposure":323705375,"el":27401898.84220912,"el_pct":0.0846507379,"realised_loss":33704148.51,"realised_pct":0.1041198297,"mean_pd":0.1719867689},{"score_band":4,"n":28261,"exposure":332430075,"el":23969435.634244427,"el_pct":0.0721036917,"realised_loss":30004509.99,"realised_pct":0.0902581091,"mean_pd":0.1491112909},{"score_band":5,"n":28262,"exposure":340847050,"el":21082510.81897702,"el_pct":0.0618532882,"realised_loss":25866346.25,"realised_pct":0.0758884263,"mean_pd":0.1302023605},{"score_band":6,"n":28261,"exposure":353396825,"el":18758681.187999465,"el_pct":0.0530810688,"realised_loss":23006057.88,"realised_pct":0.0650997866,"mean_pd":0.1135393499},{"score_band":7,"n":28261,"exposure":368770575,"el":16583129.820915231,"el_pct":0.0449686904,"realised_loss":20322731.69,"realised_pct":0.0551094178,"mean_pd":0.097908106},{"score_band":8,"n":28262,"exposure":385835875,"el":14350252.218817797,"el_pct":0.0371926333,"realised_loss":17838395.25,"realised_pct":0.0462331173,"mean_pd":0.0825677302},{"score_band":9,"n":28261,"exposure":412382575,"el":12021679.96671448,"el_pct":0.0291517651,"realised_loss":15281564.33,"realised_pct":0.0370567654,"mean_pd":0.0662131193},{"score_band":10,"n":28262,"exposure":463306750,"el":8575054.067090796,"el_pct":0.0185083728,"realised_loss":9510862.27,"realised_pct":0.0205282187,"mean_pd":0.0438377903}],"stress":[{"scenario":"Base","el":220735325.0383788,"el_pct":0.0610053794,"vs_base":0.0},{"scenario":"PD x1.5","el":331102987.55756813,"el_pct":0.0915080691,"vs_base":0.5},{"scenario":"LGD +10pts","el":246283525.7842756,"el_pct":0.0680662233,"vs_base":0.1157413329},{"scenario":"Combined","el":369425288.6764134,"el_pct":0.102099335,"vs_base":0.6736119994}],"monte_carlo":[{"scenario":"Independent defaults","rho":0.0,"n_sims":10000,"analytic_el":220735325.04,"q99":223596003.78,"q999":224494518.8,"ul_99":2860451.08,"ul_999":3758966.1},{"scenario":"Correlated defaults (ρ = 0.1)","rho":0.1,"n_sims":10000,"analytic_el":220735325.04,"q99":561740970.53,"q999":718800091.02,"ul_99":340802087.87,"ul_999":497861208.35}],"cohorts":[{"issue_year":2013,"mob":0,"cum_default_rate":0.0007966382},{"issue_year":2013,"mob":1,"cum_default_rate":0.0020115114},{"issue_year":2013,"mob":2,"cum_default_rate":0.0039134851},{"issue_year":2013,"mob":3,"cum_default_rate":0.0064029794},{"issue_year":2013,"mob":4,"cum_default_rate":0.0090717174},{"issue_year":2013,"mob":5,"cum_default_rate":0.0120192786},{"issue_year":2013,"mob":6,"cum_default_rate":0.0156838143},{"issue_year":2013,"mob":7,"cum_default_rate":0.019776543},{"issue_year":2013,"mob":8,"cum_default_rate":0.0240485153},{"issue_year":2013,"mob":9,"cum_default_rate":0.028579395},{"issue_year":2013,"mob":10,"cum_default_rate":0.032931031},{"issue_year":2013,"mob":11,"cum_default_rate":0.0375714485},{"issue_year":2013,"mob":12,"cum_default_rate":0.0422516978},{"issue_year":2013,"mob":13,"cum_default_rate":0.0471908546},{"issue_year":2013,"mob":14,"cum_default_rate":0.0517416502},{"issue_year":2013,"mob":15,"cum_default_rate":0.0563422358},{"issue_year":2013,"mob":16,"cum_default_rate":0.0607735357},{"issue_year":2013,"mob":17,"cum_default_rate":0.0654239111},{"issue_year":2013,"mob":18,"cum_default_rate":0.0701738663},{"issue_year":2013,"mob":19,"cum_default_rate":0.0740873514},{"issue_year":2013,"mob":20,"cum_default_rate":0.0783593237},{"issue_year":2013,"mob":21,"cum_default_rate":0.082591464},{"issue_year":2013,"mob":22,"cum_default_rate":0.0866344028},{"issue_year":2013,"mob":23,"cum_default_rate":0.0906773416},{"issue_year":2013,"mob":24,"cum_default_rate":0.0946505746},{"issue_year":2013,"mob":25,"cum_default_rate":0.0982653203},{"issue_year":2013,"mob":26,"cum_default_rate":0.1013622513},{"issue_year":2013,"mob":27,"cum_default_rate":0.1045388461},{"issue_year":2013,"mob":28,"cum_default_rate":0.1073370377},{"issue_year":2013,"mob":29,"cum_default_rate":0.1102049352},{"issue_year":2013,"mob":30,"cum_default_rate":0.112933421},{"issue_year":2013,"mob":31,"cum_default_rate":0.1154826632},{"issue_year":2013,"mob":32,"cum_default_rate":0.1176535022},{"issue_year":2013,"mob":33,"cum_default_rate":0.1196251817},{"issue_year":2013,"mob":34,"cum_default_rate":0.121278206},{"issue_year":2013,"mob":35,"cum_default_rate":0.1224432893},{"issue_year":2013,"mob":36,"cum_default_rate":0.1232598435},{"issue_year":2014,"mob":0,"cum_default_rate":0.0005720613},{"issue_year":2014,"mob":1,"cum_default_rate":0.0016423694},{"issue_year":2014,"mob":2,"cum_default_rate":0.0033770068},{"issue_year":2014,"mob":3,"cum_default_rate":0.0058743926},{"issue_year":2014,"mob":4,"cum_default_rate":0.0090299563},{"issue_year":2014,"mob":5,"cum_default_rate":0.0124623239},{"issue_year":2014,"mob":6,"cum_default_rate":0.0168727317},{"issue_year":2014,"mob":7,"cum_default_rate":0.0210986037},{"issue_year":2014,"mob":8,"cum_default_rate":0.0255397675},{"issue_year":2014,"mob":9,"cum_default_rate":0.0303807591},{"issue_year":2014,"mob":10,"cum_default_rate":0.0354431937},{"issue_year":2014,"mob":11,"cum_default_rate":0.0412191671},{"issue_year":2014,"mob":12,"cum_default_rate":0.0465645568},{"issue_year":2014,"mob":13,"cum_default_rate":0.0517561666},{"issue_year":2014,"mob":14,"cum_default_rate":0.056843206},{"issue_year":2014,"mob":15,"cum_default_rate":0.0618318263},{"issue_year":2014,"mob":16,"cum_default_rate":0.0670603432},{"issue_year":2014,"mob":17,"cum_default_rate":0.0719320908},{"issue_year":2014,"mob":18,"cum_default_rate":0.0767361752},{"issue_year":2014,"mob":19,"cum_default_rate":0.0816509811},{"issue_year":2014,"mob":20,"cum_default_rate":0.0861659593},{"issue_year":2014,"mob":21,"cum_default_rate":0.090791659},{"issue_year":2014,"mob":22,"cum_default_rate":0.0955157778},{"issue_year":2014,"mob":23,"cum_default_rate":0.1000123024},{"issue_year":2014,"mob":24,"cum_default_rate":0.1047979332},{"issue_year":2014,"mob":25,"cum_default_rate":0.1088700252},{"issue_year":2014,"mob":26,"cum_default_rate":0.1126776158},{"issue_year":2014,"mob":27,"cum_default_rate":0.1161899489},{"issue_year":2014,"mob":28,"cum_default_rate":0.1195669558},{"issue_year":2014,"mob":29,"cum_default_rate":0.1228455435},{"issue_year":2014,"mob":30,"cum_default_rate":0.125742757},{"issue_year":2014,"mob":31,"cum_default_rate":0.1283385619},{"issue_year":2014,"mob":32,"cum_default_rate":0.1306637141},{"issue_year":2014,"mob":33,"cum_default_rate":0.1328412376},{"issue_year":2014,"mob":34,"cum_default_rate":0.134514363},{"issue_year":2014,"mob":35,"cum_default_rate":0.1359906502},{"issue_year":2014,"mob":36,"cum_default_rate":0.1372639478},{"issue_year":2015,"mob":0,"cum_default_rate":0.0007112149},{"issue_year":2015,"mob":1,"cum_default_rate":0.0018541125},{"issue_year":2015,"mob":2,"cum_default_rate":0.0038249916},{"issue_year":2015,"mob":3,"cum_default_rate":0.0065813916},{"issue_year":2015,"mob":4,"cum_default_rate":0.0098650107},{"issue_year":2015,"mob":5,"cum_default_rate":0.0140119951},{"issue_year":2015,"mob":6,"cum_default_rate":0.0185729703},{"issue_year":2015,"mob":7,"cum_default_rate":0.023749624},{"issue_year":2015,"mob":8,"cum_default_rate":0.0292730393},{"issue_year":2015,"mob":9,"cum_default_rate":0.0348601454},{"issue_year":2015,"mob":10,"cum_default_rate":0.0407798595},{"issue_year":2015,"mob":11,"cum_default_rate":0.0466995736},{"issue_year":2015,"mob":12,"cum_default_rate":0.0527077473},{"issue_year":2015,"mob":13,"cum_default_rate":0.0587300745},{"issue_year":2015,"mob":14,"cum_default_rate":0.0648620915},{"issue_year":2015,"mob":15,"cum_default_rate":0.0706827309},{"issue_year":2015,"mob":16,"cum_default_rate":0.0765069087},{"issue_year":2015,"mob":17,"cum_default_rate":0.0822072431},{"issue_year":2015,"mob":18,"cum_default_rate":0.087875732},{"issue_year":2015,"mob":19,"cum_default_rate":0.0930063868},{"issue_year":2015,"mob":20,"cum_default_rate":0.0981653486},{"issue_year":2015,"mob":21,"cum_default_rate":0.1027829379},{"issue_year":2015,"mob":22,"cum_default_rate":0.1073828353},{"issue_year":2015,"mob":23,"cum_default_rate":0.1118978115},{"issue_year":2015,"mob":24,"cum_default_rate":0.1161120252},{"issue_year":2015,"mob":25,"cum_default_rate":0.1200927056},{"issue_year":2015,"mob":26,"cum_default_rate":0.1236770872},{"issue_year":2015,"mob":27,"cum_default_rate":0.1270703961},{"issue_year":2015,"mob":28,"cum_default_rate":0.1305309343},{"issue_year":2015,"mob":29,"cum_default_rate":0.1335491747},{"issue_year":2015,"mob":30,"cum_default_rate":0.1364648019},{"issue_year":2015,"mob":31,"cum_default_rate":0.138980592},{"issue_year":2015,"mob":32,"cum_default_rate":0.1412946942},{"issue_year":2015,"mob":33,"cum_default_rate":0.1436194116},{"issue_year":2015,"mob":34,"cum_default_rate":0.1454735241},{"issue_year":2015,"mob":35,"cum_default_rate":0.1468641084},{"issue_year":2015,"mob":36,"cum_default_rate":0.1486332997}],"meta":[{"n_loans":545607,"source":"loan.csv","n_features":11}]};
+// Minimal stand-in for the dashboard API the charts are written against.
+window.dash = (() => {
+  const subs = [];
+  let t;
+  window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => subs.forEach((f) => f()), 150); });
+  return {
+    data: (id) => (id in window.EL_DATA ? { status: 'ok', data: window.EL_DATA[id] } : { status: 'missing', data: [] }),
+    onData: (fn) => { subs.push(fn); fn(); },
+    colors: ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)'],
+    setLink: (name) => { try { history.replaceState(null, '', '#' + name); } catch (e) { /* file:// */ } },
+  };
+})();
+</script>
+</head>
+<body>
+<header class="site-bar">
+  <span>Harshath Udayakumar · Credit risk portfolio project</span>
+  <nav aria-label="Project links">
+    <a href="https://github.com/harshath1234/credit-risk-expected-loss">Code and write-up on GitHub</a>
+    <a href="https://harshath-udayakumar-portfolio.netlify.app/">Portfolio</a>
+  </nav>
+</header>
+<main id="dash-root">
+
+<div class="el-wrap">
+  <header class="el-head" id="top">
+    <h1 class="el-title">Lending Club expected loss model</h1>
+    <p class="el-takeaway" id="takeaway">
+      The scorecard ranks 2015 borrowers with a Gini of
+      <b data-source="summary" data-field="gini" data-where="sample=oot" class="dash-skeleton">—</b>
+      and a stable score distribution (PSI
+      <b data-source="summary" data-field="psi" data-where="sample=oot" class="dash-skeleton">—</b>),
+      but 2015 defaults ran above prediction, so expected loss covered
+      <b data-source="summary" data-field="el_to_realised" data-where="sample=oot" class="dash-skeleton">—</b>
+      of realised loss. Recalibrate the PD before using it for provisioning.
+    </p>
+  </header>
+
+  <nav class="el-tabs" role="tablist" aria-label="Sections">
+    <button class="el-tab" role="tab" id="tab-overview" data-tab="overview" aria-selected="true">Overview</button>
+    <button class="el-tab" role="tab" id="tab-scorecard" data-tab="scorecard" aria-selected="false">PD scorecard</button>
+    <button class="el-tab" role="tab" id="tab-validation" data-tab="validation" aria-selected="false">Validation</button>
+    <button class="el-tab" role="tab" id="tab-lgdead" data-tab="lgdead" aria-selected="false">LGD and EAD</button>
+    <button class="el-tab" role="tab" id="tab-el" data-tab="el" aria-selected="false">Expected loss</button>
+  </nav>
+
+  <!-- ================= OVERVIEW ================= -->
+  <section class="el-section" id="overview" data-section="overview">
+    <div class="el-wrap">
+      <div class="el-kpis">
+        <div class="el-kpi" id="kpi-gini"><span class="el-kpi-label">Gini, out-of-time 2015</span>
+          <span class="el-kpi-value dash-skeleton" data-source="summary" data-field="gini" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub">Train <span data-source="summary" data-field="gini" data-where="sample=train">—</span></span></div>
+        <div class="el-kpi" id="kpi-ks"><span class="el-kpi-label">KS, out-of-time 2015</span>
+          <span class="el-kpi-value dash-skeleton" data-source="summary" data-field="ks" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub">Train <span data-source="summary" data-field="ks" data-where="sample=train">—</span></span></div>
+        <div class="el-kpi" id="kpi-psi"><span class="el-kpi-label">Score PSI, train → 2015</span>
+          <span class="el-kpi-value dash-skeleton" data-source="summary" data-field="psi" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub"><span class="el-pill el-good" id="psi-pill">—</span></span></div>
+        <div class="el-kpi" id="kpi-pd"><span class="el-kpi-label">Mean PD vs bad rate, 2015</span>
+          <span class="el-kpi-value dash-skeleton" data-source="summary" data-field="mean_pd" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub">Actual <span data-source="summary" data-field="bad_rate" data-where="sample=oot">—</span></span></div>
+        <div class="el-kpi" id="kpi-el"><span class="el-kpi-label">Expected loss, 2015 cohort</span>
+          <span class="el-kpi-value dash-skeleton" data-source="summary" data-field="el_pct" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub"><span data-source="summary" data-field="expected_loss" data-where="sample=oot">—</span> of <span data-source="summary" data-field="exposure" data-where="sample=oot">—</span> funded</span></div>
+        <div class="el-kpi" id="kpi-backtest"><span class="el-kpi-label">EL ÷ realised loss, 2015</span>
+          <span class="el-kpi-value dash-skeleton" data-source="summary" data-field="el_to_realised" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub">Realised <span data-source="summary" data-field="realised_pct" data-where="sample=oot">—</span> · train <span data-source="summary" data-field="el_to_realised" data-where="sample=train">—</span></span></div>
+      </div>
+
+      <div class="el-grid">
+        <div class="el-card" id="card-vintages">
+          <h3>Bad rate by issue year</h3>
+          <p class="el-note">36-month loans with a resolved outcome. 2016+ is excluded: only part of each cohort had finished by Dec 2018, so its bad rate is biased.</p>
+          <div class="el-legend" id="leg-vintages"></div>
+          <div class="el-chart" id="ch-vintages" data-source="vintages"></div>
+        </div>
+        <div class="el-card" id="card-elgrade">
+          <h3>Expected vs realised loss by grade, 2015</h3>
+          <p class="el-note">% of funded amount. The scorecard leaves out Lending Club's own grade, so it over-predicts A and under-predicts D–G.</p>
+          <div class="el-legend" id="leg-elgrade"></div>
+          <div class="el-chart" id="ch-elgrade" data-source="el_grade"></div>
+        </div>
+        <div class="el-card el-wide" id="card-bench">
+          <h3>Model comparison</h3>
+          <p class="el-note">The scorecard is the main model. The benchmarks show what interpretability costs (LightGBM) and how much Lending Club's own grade adds.</p>
+          <div class="el-tablebox">
+            <table class="el-table" id="tb-bench" data-source="benchmarks" data-row-key="model,sample">
+              <thead><tr><th class="el-text" data-field="model">Model</th><th data-field="sample">Sample</th><th data-field="gini">Gini</th><th data-field="auc">AUC</th><th data-field="ks">KS</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SCORECARD ================= -->
+  <section class="el-section" id="scorecard" data-section="scorecard" hidden>
+    <div class="el-grid">
+      <div class="el-card" id="card-iv">
+        <h3>Information value by candidate feature</h3>
+        <p class="el-note">IV = Σ (%good − %bad) × WoE on the coarse bins, train 2013–14. Below 0.02 is dropped; all are "weak" (&lt; 0.1) because this data has no FICO score.</p>
+        <div class="el-legend" id="leg-iv"></div>
+        <div class="el-chart el-tall" id="ch-iv" data-source="iv"></div>
+      </div>
+      <div class="el-card" id="card-coef">
+        <h3>Logistic regression on WoE features</h3>
+        <p class="el-note">Statsmodels Logit. With WoE = ln(%good/%bad), every coefficient should be negative. All final features are, and all are significant.</p>
+        <div class="el-tablebox">
+          <table class="el-table" id="tb-coef" data-source="coefficients" data-row-key="feature">
+            <thead><tr><th class="el-text" data-field="feature">Feature</th><th data-field="coef">Coefficient</th><th data-field="std_err">Std. error</th><th data-field="p_value">p-value</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="el-card el-wide" id="card-points">
+        <h3>Scorecard points</h3>
+        <p class="el-note">PDO 20, 600 points at 50:1 good:bad odds. An applicant's score is the sum of one bin's points per feature; higher scores mean lower PD.</p>
+        <div class="el-controls">
+          <label for="sel-feature">Feature</label>
+          <select id="sel-feature" data-source="points"></select>
+        </div>
+        <div class="el-tablebox">
+          <table class="el-table" id="tb-points" data-source="points" data-row-key="feature,bin">
+            <thead><tr><th class="el-text" data-field="feature">Feature</th><th class="el-text" data-field="bin">Bin</th><th data-field="woe">WoE</th><th data-field="points">Points</th><th data-field="share_train">Share of loans</th><th data-field="bad_rate_train">Bad rate</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= VALIDATION ================= -->
+  <section class="el-section" id="validation" data-section="validation" hidden>
+    <div class="el-grid">
+      <div class="el-card el-wide" id="card-metrics">
+        <h3>Train vs out-of-time</h3>
+        <p class="el-note">Discrimination holds in 2015. Calibration doesn't: the bad rate rose year on year and Hosmer–Lemeshow rejects in 2015.</p>
+        <div class="el-tablebox">
+          <table class="el-table" id="tb-metrics" data-source="summary" data-row-key="sample">
+            <thead><tr><th class="el-text" data-field="label">Sample</th><th data-field="loans">Loans</th><th data-field="bad_rate">Bad rate</th><th data-field="mean_pd">Mean PD</th><th data-field="auc">AUC</th><th data-field="gini">Gini</th><th data-field="ks">KS</th><th data-field="brier">Brier</th><th data-field="hl_p">H–L p-value</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="el-card" id="card-cal">
+        <h3>Calibration by PD decile</h3>
+        <p class="el-note">Points on the dashed line are perfectly calibrated. 2015 sits above it: actual defaults ran above prediction in almost every decile.</p>
+        <div class="el-legend" id="leg-cal"></div>
+        <div class="el-chart" id="ch-cal" data-source="calibration"></div>
+      </div>
+      <div class="el-card" id="card-gains">
+        <h3>Bad rate by score decile, 2015</h3>
+        <p class="el-note">Decile 1 = lowest scores. The bad rate falls in every decile, so the score ranks risk consistently.</p>
+        <div class="el-chart" id="ch-gains" data-source="gains"></div>
+      </div>
+      <div class="el-card" id="card-psi">
+        <h3>Score distribution, train vs 2015</h3>
+        <p class="el-note">Bands are train deciles. PSI &lt; 0.10 is stable, 0.10–0.25 monitor, &gt; 0.25 significant shift.</p>
+        <div class="el-legend" id="leg-psi"></div>
+        <div class="el-chart" id="ch-psi" data-source="psi"></div>
+      </div>
+      <div class="el-card" id="card-csi">
+        <h3>Feature stability (CSI)</h3>
+        <p class="el-note">PSI computed on each scorecard feature's bins. All are far below 0.10, so the applicants didn't change; their outcomes did.</p>
+        <div class="el-chart" id="ch-csi" data-source="csi"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LGD / EAD ================= -->
+  <section class="el-section" id="lgdead" data-section="lgdead" hidden>
+    <div class="el-grid">
+      <div class="el-card" id="card-lgdhist">
+        <h3>Realised LGD on defaulted loans</h3>
+        <p class="el-note">Train 2013–14 defaults. LGD = 1 − recoveries ÷ principal outstanding. Most recover 10–15% (charged-off debt is sold); a large group recovers nothing.</p>
+        <div class="el-chart" id="ch-lgdhist" data-source="lgd_hist"></div>
+      </div>
+      <div class="el-card" id="card-lgdgrade">
+        <h3>LGD by grade, 2015 defaults</h3>
+        <p class="el-note">Actual LGD is flat across grades, so borrower data at origination says little about recovery.</p>
+        <div class="el-legend" id="leg-lgdgrade"></div>
+        <div class="el-chart" id="ch-lgdgrade" data-source="lgd_ead_by_grade"></div>
+      </div>
+      <div class="el-card" id="card-eadgrade">
+        <h3>Share of loan outstanding at default, 2015</h3>
+        <p class="el-note">EAD ratio = (funded − principal repaid) ÷ funded. Riskier grades default earlier, with more still owed.</p>
+        <div class="el-legend" id="leg-eadgrade"></div>
+        <div class="el-chart" id="ch-eadgrade" data-source="lgd_ead_by_grade"></div>
+      </div>
+      <div class="el-card" id="card-lgdmodels">
+        <h3>Models vs simple baselines, 2015 defaults</h3>
+        <p class="el-note">The two-stage LGD model barely beats a flat average. EAD's R² comes mostly from loan size.</p>
+        <div class="el-tablebox">
+          <table class="el-table" id="tb-lgdmodels" data-source="lgd_ead_models" data-row-key="component,model">
+            <thead><tr><th class="el-text" data-field="component">Model of</th><th class="el-text" data-field="model">Approach</th><th data-field="mean_actual">Actual</th><th data-field="mean_pred">Predicted</th><th data-field="rmse">RMSE</th><th data-field="r2">R²</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= EXPECTED LOSS ================= -->
+  <section class="el-section" id="el" data-section="el" hidden>
+    <div class="el-wrap">
+      <div class="el-kpis">
+        <div class="el-kpi"><span class="el-kpi-label">Expected loss, 2015</span>
+          <span class="el-kpi-value" data-source="summary" data-field="expected_loss" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub"><span data-source="summary" data-field="el_pct" data-where="sample=oot">—</span> of funded</span></div>
+        <div class="el-kpi"><span class="el-kpi-label">Realised loss, 2015</span>
+          <span class="el-kpi-value" data-source="summary" data-field="realised_loss" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub"><span data-source="summary" data-field="realised_pct" data-where="sample=oot">—</span> of funded</span></div>
+        <div class="el-kpi"><span class="el-kpi-label">PD: predicted ÷ actual</span>
+          <span class="el-kpi-value" data-source="summary" data-field="pd_ratio" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub">Main source of the gap</span></div>
+        <div class="el-kpi"><span class="el-kpi-label">EAD: predicted ÷ actual</span>
+          <span class="el-kpi-value" data-source="summary" data-field="ead_ratio" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub">Defaulted loans</span></div>
+        <div class="el-kpi"><span class="el-kpi-label">LGD: predicted ÷ actual</span>
+          <span class="el-kpi-value" data-source="summary" data-field="lgd_ratio" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub">Exposure-weighted</span></div>
+      </div>
+      <div class="el-grid">
+        <div class="el-card el-wide" id="card-elband">
+          <h3>Expected vs realised loss by score decile, 2015</h3>
+          <p class="el-note">% of funded amount. Decile 1 = lowest scores. EL ranks loss well but sits below realised loss in every decile.</p>
+          <div class="el-legend" id="leg-elband"></div>
+          <div class="el-chart" id="ch-elband" data-source="el_band"></div>
+        </div>
+        <div class="el-card" id="card-stress">
+          <h3>Stress test, 2015 portfolio</h3>
+          <p class="el-note">Expected loss as % of funded under each shock. LGD is already high, so +10 points moves EL less than PD × 1.5.</p>
+          <div class="el-chart" id="ch-stress" data-source="stress"></div>
+        </div>
+        <div class="el-card" id="card-mc">
+          <h3>Monte Carlo portfolio loss</h3>
+          <p class="el-note">Simulated losses on the 2015 cohort with Bernoulli defaults at each loan's PD. ρ = 0.10 is an assumed asset correlation (Vasicek, as in Basel IRB), not an estimate.</p>
+          <div class="el-tablebox">
+            <table class="el-table" id="tb-mc" data-source="monte_carlo" data-row-key="scenario">
+              <thead><tr><th class="el-text" data-field="scenario">Defaults</th><th data-field="analytic_el">Expected loss</th><th data-field="q99">99th percentile</th><th data-field="ul_99">Unexpected loss (99%)</th><th data-field="q999">99.9th percentile</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="el-card el-wide" id="card-cohort">
+          <h3>Cumulative default rate by issue-year cohort</h3>
+          <p class="el-note">Months on book to the last payment before charge-off. Each newer cohort defaults faster, the same drift that breaks 2015 calibration.</p>
+          <div class="el-legend" id="leg-cohort"></div>
+          <div class="el-chart" id="ch-cohort" data-source="cohorts"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+</main>
+<footer class="site-foot">
+  Data: Lending Club loans issued 2013–2015 (Kaggle "Lending Club Loan Data"), individual 36-month loans with a resolved outcome.
+  Amounts in US dollars. Train = 2013–14 issues, out-of-time test = 2015 issues. Every figure is generated by
+  <code>run_all.py</code> and embedded by <code>build_site.py</code>; see the
+  <a href="https://github.com/harshath1234/credit-risk-expected-loss#readme">README</a> for method, assumptions and limitations.
+  A portfolio project, not a bank-approved model.
+</footer>
+<script>
+(() => {
+  const root = document.getElementById('dash-root');
+  const F = {
+    pct1: d3.format('.1%'), pct2: d3.format('.2%'), pct0: d3.format('.0%'),
+    n3: d3.format('.3f'), n4: d3.format('.4f'), n2: d3.format('.2f'), int: d3.format(','),
+    usdM: (v) => '$' + d3.format(',.1f')(v / 1e6) + 'm',
+    usdB: (v) => '$' + d3.format(',.2f')(v / 1e9) + 'bn',
+    usd: (v) => '$' + d3.format(',.0f')(v),
+    p: (v) => v < 0.0001 ? '< 0.0001' : d3.format('.4f')(v),
+    x: (v) => d3.format('.2f')(v) + '×',
+  };
+  const C = () => dash.colors;
+  window.elF = F;
+
+  // ---------- helpers ----------
+  const rowsOf = (id) => { const d = dash.data(id); return d.status === 'ok' ? d.data : null; };
+  const stateOf = (id) => dash.data(id).status;
+  function fail(el) { el.replaceChildren(); const d = document.createElement('div'); d.className = 'el-fail'; d.textContent = 'Failed to load'; el.appendChild(d); }
+  function guard(el, id) {
+    const st = stateOf(id);
+    if (st === 'ok') { el.classList.remove('dash-skeleton'); return rowsOf(id); }
+    if (st === 'error' || st === 'connect' || st === 'declined' || st === 'missing') { el.classList.remove('dash-skeleton'); fail(el); return null; }
+    el.replaceChildren(); el.classList.add('dash-skeleton'); return null;
+  }
+  function legend(el, items) {
+    el.replaceChildren(...items.map(([label, color, line]) => {
+      const s = document.createElement('span'); const i = document.createElement('i');
+      if (line) i.className = 'el-line'; i.style.background = color; s.append(i, document.createTextNode(label)); return s;
+    }));
+  }
+  function tip(el) {
+    let t = el.querySelector(':scope > .el-tip');
+    if (!t) { t = document.createElement('div'); t.className = 'el-tip'; t.hidden = true; el.appendChild(t); }
+    return {
+      show(event, head, lines) {
+        t.replaceChildren();
+        const h = document.createElement('div'); h.className = 'el-tip-h'; h.textContent = head; t.appendChild(h);
+        lines.forEach(([c, name, val]) => {
+          const r = document.createElement('div'); r.className = 'el-tip-r';
+          if (c) { const i = document.createElement('i'); i.style.background = c; r.appendChild(i); }
+          r.appendChild(document.createTextNode(name ? name + ': ' + val : val)); t.appendChild(r);
+        });
+        t.hidden = false;
+        const [mx, my] = d3.pointer(event, el);
+        const w = t.offsetWidth, h2 = t.offsetHeight;
+        let x = mx + 12; if (x + w > el.clientWidth) x = Math.max(0, mx - w - 12);
+        let y = my - h2 - 8; if (y < 0) y = my + 12;
+        t.style.left = x + 'px'; t.style.top = y + 'px';
+      },
+      hide() { t.hidden = true; },
+    };
+  }
+  function measure(svg, texts) {
+    const g = svg.append('g'); let m = 0;
+    texts.forEach((s) => { const n = g.append('text').text(s); m = Math.max(m, n.node().getComputedTextLength()); });
+    g.remove(); return m;
+  }
+  function newSvg(el, height) {
+    el.querySelectorAll(':scope > svg').forEach((n) => n.remove());
+    const W = Math.max(280, el.clientWidth);
+    const svg = d3.select(el).insert('svg', ':first-child').attr('width', '100%').attr('viewBox', `0 0 ${W} ${height}`).attr('height', height);
+    return { svg, W, H: height };
+  }
+  function yAxis(g, y, fmt, W, left, ticks = 5) {
+    g.append('g').selectAll('line').data(y.ticks(ticks)).join('line')
+      .attr('x1', left).attr('x2', W).attr('y1', y).attr('y2', y).style('stroke', 'var(--cds-chart-grid)');
+    g.append('g').selectAll('text').data(y.ticks(ticks)).join('text')
+      .attr('x', left - 6).attr('y', y).attr('dy', '0.32em').attr('text-anchor', 'end').text(fmt);
+  }
+
+  // Grouped vertical bars. series: [{key, label, color}]
+  function bars(el, rows, { x, xFmt = String, series, yFmt, height = 260, xTitle, colorFn, tipHead, allTicks }) {
+    const { svg, W, H } = newSvg(el, height);
+    const maxV = d3.max(rows, (r) => d3.max(series, (s) => r[s.key])) || 1;
+    const y0 = d3.scaleLinear([0, maxV * 1.08], [H - 34, 10]).nice();
+    const left = measure(svg, y0.ticks(5).map(yFmt)) + 12;
+    const xb = d3.scaleBand(rows.map((r) => r[x]), [left, W - 4]).padding(0.25);
+    const xi = d3.scaleBand(series.map((s) => s.key), [0, xb.bandwidth()]).padding(0.08);
+    yAxis(svg, y0, yFmt, W, left);
+    svg.append('line').attr('x1', left).attr('x2', W).attr('y1', y0(0)).attr('y2', y0(0)).style('stroke', 'var(--cds-chart-axis)');
+    const step = allTicks ? 1 : Math.ceil(rows.length / Math.max(1, Math.floor((W - left) / 38)));
+    svg.append('g').selectAll('text').data(rows.filter((_, i) => i % step === 0)).join('text')
+      .attr('x', (r) => xb(r[x]) + xb.bandwidth() / 2).attr('y', H - 18).attr('text-anchor', 'middle').text((r) => xFmt(r[x]));
+    if (xTitle) svg.append('text').attr('x', left + (W - left) / 2).attr('y', H - 2).attr('text-anchor', 'middle').text(xTitle);
+    const tt = tip(el);
+    const groups = svg.append('g').selectAll('g').data(rows).join('g').attr('transform', (r) => `translate(${xb(r[x])},0)`);
+    groups.selectAll('rect').data((r) => series.map((s) => ({ r, s }))).join('rect')
+      .attr('x', (d) => xi(d.s.key)).attr('width', Math.min(32, xi.bandwidth()))
+      .attr('y', (d) => y0(d.r[d.s.key])).attr('height', (d) => Math.max(0, y0(0) - y0(d.r[d.s.key])))
+      .attr('rx', 4).style('fill', (d) => colorFn ? colorFn(d.r, d.s) : d.s.color);
+    groups.append('rect').attr('x', 0).attr('width', xb.bandwidth()).attr('y', 0).attr('height', H - 34).style('fill', 'transparent')
+      .on('mousemove', (ev, r) => tt.show(ev, tipHead ? tipHead(r) : xFmt(r[x]), series.map((s) => [series.length > 1 ? (colorFn ? colorFn(r, s) : s.color) : null, series.length > 1 ? s.label : s.label, yFmt(r[s.key])])))
+      .on('mouseleave', () => tt.hide());
+  }
+
+  // Horizontal bars, one value per row.
+  function hbars(el, rows, { y, x, fmt, colorFn, rowH = 18, tipLines }) {
+    const H = rows.length * rowH + 28;
+    const { svg, W } = newSvg(el, H);
+    const left = measure(svg, rows.map((r) => r[y])) + 10;
+    const maxV = d3.max(rows, (r) => r[x]) || 1;
+    const valW = measure(svg, rows.map((r) => fmt(r[x]))) + 8;
+    const xs = d3.scaleLinear([0, maxV], [left, W - valW]);
+    const yb = d3.scaleBand(rows.map((r) => r[y]), [4, H - 24]).padding(0.2);
+    svg.append('g').selectAll('line').data(xs.ticks(4)).join('line').attr('x1', xs).attr('x2', xs).attr('y1', 4).attr('y2', H - 24).style('stroke', 'var(--cds-chart-grid)');
+    svg.append('g').selectAll('text').data(xs.ticks(4)).join('text').attr('x', xs).attr('y', H - 8).attr('text-anchor', 'middle').text(fmt);
+    svg.append('g').selectAll('text').data(rows).join('text').attr('x', left - 6).attr('y', (r) => yb(r[y]) + yb.bandwidth() / 2).attr('dy', '0.32em').attr('text-anchor', 'end').text((r) => r[y]);
+    svg.append('g').selectAll('rect').data(rows).join('rect').attr('x', left).attr('y', (r) => yb(r[y])).attr('height', yb.bandwidth())
+      .attr('width', (r) => Math.max(1, xs(r[x]) - left)).attr('rx', 3).style('fill', (r) => colorFn(r));
+    svg.append('g').selectAll('text').data(rows).join('text').attr('class', 'el-val').attr('x', (r) => xs(r[x]) + 4).attr('y', (r) => yb(r[y]) + yb.bandwidth() / 2).attr('dy', '0.32em').text((r) => fmt(r[x]));
+    const tt = tip(el);
+    svg.append('g').selectAll('rect').data(rows).join('rect').attr('x', 0).attr('width', W).attr('y', (r) => yb(r[y]) - 2).attr('height', yb.bandwidth() + 4).style('fill', 'transparent')
+      .on('mousemove', (ev, r) => tt.show(ev, r[y], tipLines(r))).on('mouseleave', () => tt.hide());
+  }
+
+  // Lines. series: [{label, color, points:[{x,y}]}]
+  function lines(el, series, { xFmt, yFmt, xDomain, yDomain, diagonal, height = 260, xTitle, endLabels }) {
+    const { svg, W, H } = newSvg(el, height);
+    const y = d3.scaleLinear(yDomain, [H - 34, 10]).nice();
+    const left = measure(svg, y.ticks(5).map(yFmt)) + 12;
+    const right = endLabels ? measure(svg, series.map((s) => s.label)) + 10 : 8;
+    const x = d3.scaleLinear(xDomain, [left, W - right]);
+    yAxis(svg, y, yFmt, W - right, left);
+    svg.append('g').selectAll('text').data(x.ticks(Math.max(2, Math.floor((W - left - right) / 70)))).join('text')
+      .attr('x', x).attr('y', H - 18).attr('text-anchor', 'middle').text(xFmt);
+    if (xTitle) svg.append('text').attr('x', left + (W - left - right) / 2).attr('y', H - 2).attr('text-anchor', 'middle').text(xTitle);
+    if (diagonal) {
+      const m = Math.min(xDomain[1], y.domain()[1]);
+      svg.append('line').attr('x1', x(0)).attr('y1', y(0)).attr('x2', x(m)).attr('y2', y(m)).style('stroke', 'var(--cds-chart-reference)').attr('stroke-dasharray', '4 4');
+    }
+    const ln = d3.line().x((p) => x(p.x)).y((p) => y(p.y));
+    series.forEach((s) => {
+      svg.append('path').attr('d', ln(s.points)).style('fill', 'none').style('stroke', s.color).attr('stroke-width', 2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+      if (s.dots) svg.append('g').selectAll('circle').data(s.points).join('circle').attr('cx', (p) => x(p.x)).attr('cy', (p) => y(p.y)).attr('r', 3.5).style('fill', s.color);
+    });
+    if (endLabels) {
+      const ends = series.map((s) => ({ s, yy: y(s.points[s.points.length - 1].y) })).sort((a, b) => a.yy - b.yy);
+      for (let i = 1; i < ends.length; i++) if (ends[i].yy - ends[i - 1].yy < 13) ends[i].yy = ends[i - 1].yy + 13;
+      svg.append('g').selectAll('text').data(ends).join('text').attr('class', 'el-val').attr('x', W - right + 6).attr('y', (d) => d.yy).attr('dy', '0.32em').text((d) => d.s.label);
+    }
+    const tt = tip(el);
+    const focus = svg.append('line').style('stroke', 'var(--cds-chart-axis)').attr('y1', 10).attr('y2', H - 34).attr('visibility', 'hidden');
+    svg.append('rect').attr('x', left).attr('width', Math.max(0, W - right - left)).attr('y', 0).attr('height', H - 34).style('fill', 'transparent')
+      .on('mousemove', (ev) => {
+        const [mx] = d3.pointer(ev); const xv = x.invert(mx);
+        const near = series.map((s) => s.points.reduce((a, b) => Math.abs(b.x - xv) < Math.abs(a.x - xv) ? b : a));
+        focus.attr('x1', x(near[0].x)).attr('x2', x(near[0].x)).attr('visibility', 'visible');
+        tt.show(ev, xFmt(near[0].x), series.map((s, i) => [s.color, s.label, (s.tipFmt || yFmt)(near[i].y) + (s.tipExtra ? s.tipExtra(near[i]) : '')]));
+      })
+      .on('mouseleave', () => { tt.hide(); focus.attr('visibility', 'hidden'); });
+  }
+
+  function table(tb, rows, cols) {
+    const body = tb.tBodies[0];
+    body.replaceChildren(...rows.map((r) => {
+      const tr = document.createElement('tr');
+      cols.forEach(([k, fmt, cls]) => { const td = document.createElement('td'); if (cls) td.className = cls; td.textContent = fmt ? fmt(r[k], r) : r[k]; tr.appendChild(td); });
+      return tr;
+    }));
+  }
+  function fillMarks() {
+    root.querySelectorAll('[data-source="summary"][data-field][data-where]').forEach((el) => {
+      const rows = rowsOf('summary');
+      if (!rows) { if (stateOf('summary') !== 'loading') el.classList.remove('dash-skeleton'); return; }
+      el.classList.remove('dash-skeleton');
+      const s = el.dataset.where.split('=')[1]; const r = rows.find((x) => x.sample === s); if (!r) return;
+      const f = el.dataset.field; const v = r[f];
+      const fmt = { gini: F.n3, ks: F.n3, auc: F.n3, psi: F.n4, mean_pd: F.pct1, bad_rate: F.pct1, el_pct: F.pct1, realised_pct: F.pct1,
+        el_to_realised: F.n2, expected_loss: F.usdM, realised_loss: F.usdM, exposure: F.usdB, pd_ratio: F.n3, ead_ratio: F.n3, lgd_ratio: F.n3 }[f] || F.n3;
+      el.textContent = fmt(v);
+    });
+    const s = rowsOf('summary');
+    const pill = document.getElementById('psi-pill');
+    if (s) { const v = s.find((r) => r.sample === 'oot').psi; pill.textContent = v < 0.1 ? 'Stable' : v < 0.25 ? 'Monitor' : 'Shift'; pill.className = 'el-pill ' + (v < 0.1 ? 'el-good' : v < 0.25 ? 'el-warn' : 'el-bad'); }
+    else pill.textContent = '—';
+  }
+
+  // ---------- sections ----------
+  const draw = {
+    overview() {
+      const c = C();
+      let el = document.getElementById('ch-vintages'); let rows = guard(el, 'vintages');
+      legend(document.getElementById('leg-vintages'), [['Train', c[0]], ['Out-of-time', c[1]], ['Excluded', 'var(--cds-chart-muted)']]);
+      if (rows) {
+        rows = rows.filter((r) => r.issue_year >= 2010);
+        const col = (r) => r.role === 'Train' ? c[0] : r.role === 'Out-of-time' ? c[1] : 'var(--cds-chart-muted)';
+        bars(el, rows, { x: 'issue_year', series: [{ key: 'bad_rate_resolved', label: 'Bad rate', color: c[0] }], yFmt: F.pct0, colorFn: (r) => col(r),
+          tipHead: (r) => `${r.issue_year} · ${r.role}` });
+      }
+      el = document.getElementById('ch-elgrade'); rows = guard(el, 'el_grade');
+      legend(document.getElementById('leg-elgrade'), [['Expected loss', c[0]], ['Realised loss', c[1]]]);
+      if (rows) bars(el, rows, { x: 'grade', series: [{ key: 'el_pct', label: 'Expected', color: c[0] }, { key: 'realised_pct', label: 'Realised', color: c[1] }], yFmt: F.pct0, tipHead: (r) => `Grade ${r.grade}` });
+      const tb = document.getElementById('tb-bench'); const b = rowsOf('benchmarks');
+      if (b) table(tb, b, [['model', null, 'el-text'], ['sample'], ['gini', F.n3], ['auc', F.n3], ['ks', F.n3]]);
+    },
+    scorecard() {
+      const c = C();
+      const el = document.getElementById('ch-iv'); const rows = guard(el, 'iv');
+      const st = { 'In scorecard': c[0], 'Correlated': c[2], 'Not significant': c[3], 'IV below 0.02': 'var(--cds-chart-muted)' };
+      legend(document.getElementById('leg-iv'), Object.entries(st).map(([k, v]) => [k, v]));
+      if (rows) hbars(el, [...rows].sort((a, b) => b.iv - a.iv), { y: 'feature', x: 'iv', fmt: F.n4, colorFn: (r) => st[r.status] || 'var(--cds-chart-muted)',
+        tipLines: (r) => [[null, 'IV', F.n4(r.iv)], [null, 'Bins', r.n_bins], [null, '', r.status]] });
+      const cf = rowsOf('coefficients');
+      if (cf) table(document.getElementById('tb-coef'), cf, [['feature', null, 'el-text'], ['coef', F.n3], ['std_err', F.n3], ['p_value', (v) => v < 1e-4 ? '< 0.0001' : F.n4(v)]]);
+      const pts = rowsOf('points'); const sel = document.getElementById('sel-feature');
+      if (pts) {
+        const feats = [...new Set(pts.map((p) => p.feature))];
+        const cur = sel.value || feats[0];
+        sel.replaceChildren(new Option('All features', '__all'), ...feats.map((f) => new Option(f, f)));
+        sel.value = feats.includes(cur) || cur === '__all' ? cur : feats[0];
+        const shown = sel.value === '__all' ? pts : pts.filter((p) => p.feature === sel.value);
+        table(document.getElementById('tb-points'), shown, [['feature', null, 'el-text'], ['bin', null, 'el-text'], ['woe', F.n3], ['points', (v) => String(v)], ['share_train', F.pct1], ['bad_rate_train', F.pct1]]);
+      }
+    },
+    validation() {
+      const c = C();
+      const s = rowsOf('summary');
+      if (s) table(document.getElementById('tb-metrics'), s, [['label', null, 'el-text'], ['loans', F.int], ['bad_rate', F.pct1], ['mean_pd', F.pct1], ['auc', F.n3], ['gini', F.n3], ['ks', F.n3], ['brier', F.n3], ['hl_p', F.p]]);
+      let el = document.getElementById('ch-cal'); let rows = guard(el, 'calibration');
+      legend(document.getElementById('leg-cal'), [['Train 2013–14', c[0], true], ['Out-of-time 2015', c[1], true], ['Perfect calibration', 'var(--cds-chart-reference)', true]]);
+      if (rows) {
+        const mk = (smp, label, color) => ({ label, color, dots: true, tipFmt: F.pct1, tipExtra: (p) => ` observed vs ${F.pct1(p.x)} predicted`,
+          points: rows.filter((r) => r.sample === smp).map((r) => ({ x: r.pd_mean, y: r.observed_rate })) });
+        const mx = d3.max(rows, (r) => Math.max(r.pd_mean, r.observed_rate));
+        lines(el, [mk('train', 'Train', c[0]), mk('oot', '2015', c[1])], { xFmt: F.pct0, yFmt: F.pct0, xDomain: [0, mx * 1.05], yDomain: [0, mx * 1.05], diagonal: true, xTitle: 'Mean predicted PD (decile)' });
+      }
+      el = document.getElementById('ch-gains'); rows = guard(el, 'gains');
+      if (rows) bars(el, rows, { x: 'band', series: [{ key: 'bad_rate', label: 'Bad rate', color: c[0] }], yFmt: F.pct0, xTitle: 'Score decile (1 = lowest score)',
+        tipHead: (r) => `Decile ${r.band} · score ${r.score_min}–${r.score_max}` });
+      el = document.getElementById('ch-psi'); rows = guard(el, 'psi');
+      legend(document.getElementById('leg-psi'), [['Train 2013–14', c[0]], ['Out-of-time 2015', c[1]]]);
+      if (rows) bars(el, rows, { x: 'band', series: [{ key: 'expected_pct', label: 'Train', color: c[0] }, { key: 'actual_pct', label: '2015', color: c[1] }], yFmt: F.pct0, xTitle: 'Score band (train deciles)', tipHead: (r) => `Band ${r.band}` });
+      el = document.getElementById('ch-csi'); rows = guard(el, 'csi');
+      if (rows) hbars(el, [...rows].sort((a, b) => b.csi - a.csi), { y: 'feature', x: 'csi', fmt: F.n3, colorFn: () => c[0], rowH: 22, tipLines: (r) => [[null, 'CSI', F.n4(r.csi)]] });
+    },
+    lgdead() {
+      const c = C();
+      let el = document.getElementById('ch-lgdhist'); let rows = guard(el, 'lgd_hist');
+      if (rows) bars(el, rows.map((r) => ({ ...r, bin: r.lgd_to })), { x: 'bin', xFmt: (v) => (Math.round(v * 100) % 20 === 0 ? F.pct0(v) : ''), series: [{ key: 'loans', label: 'Defaulted loans', color: c[0] }], allTicks: true,
+        yFmt: d3.format(','), xTitle: 'LGD (upper edge of 5-point bin)', tipHead: (r) => `LGD ${F.pct0(r.lgd_from)}–${F.pct0(r.lgd_to)}` });
+      el = document.getElementById('ch-lgdgrade'); rows = guard(el, 'lgd_ead_by_grade');
+      legend(document.getElementById('leg-lgdgrade'), [['Actual', c[0]], ['Predicted', c[1]]]);
+      if (rows) bars(el, rows, { x: 'grade', series: [{ key: 'lgd_actual', label: 'Actual', color: c[0] }, { key: 'lgd_pred', label: 'Predicted', color: c[1] }], yFmt: F.pct0, tipHead: (r) => `Grade ${r.grade} · ${F.int(r.n)} defaults` });
+      el = document.getElementById('ch-eadgrade'); rows = guard(el, 'lgd_ead_by_grade');
+      legend(document.getElementById('leg-eadgrade'), [['Actual', c[0]], ['Predicted', c[1]]]);
+      if (rows) bars(el, rows, { x: 'grade', series: [{ key: 'ead_ratio_actual', label: 'Actual', color: c[0] }, { key: 'ead_ratio_pred', label: 'Predicted', color: c[1] }], yFmt: F.pct0, tipHead: (r) => `Grade ${r.grade} · ${F.int(r.n)} defaults` });
+      const m = rowsOf('lgd_ead_models');
+      if (m) table(document.getElementById('tb-lgdmodels'), m, [['component', null, 'el-text'], ['model', null, 'el-text'],
+        ['mean_actual', (v, r) => r.component === 'LGD' ? F.pct1(v) : F.usd(v)], ['mean_pred', (v, r) => r.component === 'LGD' ? F.pct1(v) : F.usd(v)],
+        ['rmse', (v, r) => r.component === 'LGD' ? F.n4(v) : F.usd(v)], ['r2', F.n3]]);
+    },
+    el() {
+      const c = C();
+      let el = document.getElementById('ch-elband'); let rows = guard(el, 'el_band');
+      legend(document.getElementById('leg-elband'), [['Expected loss', c[0]], ['Realised loss', c[1]]]);
+      if (rows) bars(el, rows, { x: 'score_band', series: [{ key: 'el_pct', label: 'Expected', color: c[0] }, { key: 'realised_pct', label: 'Realised', color: c[1] }], yFmt: F.pct0, xTitle: 'Score decile (1 = lowest score)', tipHead: (r) => `Decile ${r.score_band} · mean PD ${F.pct1(r.mean_pd)}` });
+      el = document.getElementById('ch-stress'); rows = guard(el, 'stress');
+      if (rows) bars(el, rows, { x: 'scenario', series: [{ key: 'el_pct', label: 'EL % of funded', color: c[0] }], yFmt: F.pct0,
+        colorFn: (r) => r.scenario === 'Base' ? 'var(--cds-chart-muted)' : c[0], tipHead: (r) => `${r.scenario} · ${F.usdM(r.el)} (${r.vs_base >= 0 ? '+' : ''}${F.pct0(r.vs_base)} vs base)` });
+      const mc = rowsOf('monte_carlo');
+      if (mc) table(document.getElementById('tb-mc'), mc, [['scenario', null, 'el-text'], ['analytic_el', F.usdM], ['q99', F.usdM], ['ul_99', F.usdM], ['q999', F.usdM]]);
+      el = document.getElementById('ch-cohort'); rows = guard(el, 'cohorts');
+      if (rows) {
+        const years = [...new Set(rows.map((r) => r.issue_year))].sort();
+        legend(document.getElementById('leg-cohort'), years.map((y, i) => [String(y), c[i], true]));
+        const series = years.map((y, i) => ({ label: String(y), color: c[i], points: rows.filter((r) => r.issue_year === y).map((r) => ({ x: r.mob, y: r.cum_default_rate })) }));
+        lines(el, series, { xFmt: (v) => `${v} mo`, yFmt: F.pct0, xDomain: [0, 36], yDomain: [0, d3.max(rows, (r) => r.cum_default_rate)], xTitle: 'Months on book', endLabels: true });
+      }
+    },
+  };
+
+  // ---------- tabs ----------
+  const tabs = [...root.querySelectorAll('.el-tab')];
+  let current = 'overview';
+  function show(name, link = true) {
+    current = name;
+    tabs.forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === name)));
+    root.querySelectorAll('.el-section').forEach((s) => { s.hidden = s.dataset.section !== name; });
+    if (link) dash.setLink(name);
+    redraw();
+  }
+  tabs.forEach((t) => t.addEventListener('click', () => show(t.dataset.tab)));
+  document.getElementById('sel-feature').addEventListener('change', () => draw.scorecard());
+  function redraw() { fillMarks(); draw[current](); }
+  const start = location.hash.slice(1);
+  if (draw[start]) { current = start; tabs.forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === start))); root.querySelectorAll('.el-section').forEach((s) => { s.hidden = s.dataset.section !== start; }); }
+  dash.onData(redraw);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+feature,value,bin,points
+annual_inc,65000.0,"(60,000, 65,000]",50
+tot_hi_cred_lim,314017.0,"(306,555, 465,858]",57
+bc_open_to_buy,57830.0,"> 22,013",62
+acc_open_past_24mths,4.0,"(3, 4]",49
+dti,16.06,"(15.71, 19.06]",50
+loan_to_income,0.38,> 0.3462,40
+home_ownership,MORTGAGE,OTHER / MORTGAGE,52
+mo_sin_rcnt_tl,2.0,"(1, 2]",46
+mo_sin_old_rev_tl_op,192.0,"(154, 196]",50
+percent_bc_gt_75,7.7,<= 14.3,54
+mths_since_recent_inq,0.0,<= 1,43

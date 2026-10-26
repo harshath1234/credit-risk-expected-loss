@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lending Club Expected Loss · Harshath Udayakumar</title>
+<meta name="description" content="Credit risk expected loss model (PD scorecard, LGD, EAD) on 546K Lending Club loans, validated out-of-time on 2015 issues.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<style>
+/* Layout: one centered column (max 1200px); header, tab bar, then a responsive card grid. */
+:root {
+  --color-bg: #f7f7f5; --color-panel: #ffffff; --color-fg: #16181d; --color-fg-muted: #5b606b;
+  --color-border-line: #e3e3df; --color-ok: #1b7a43; --color-warn: #9a6100; --color-bad: #c03a39;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #6250d6;
+  --cds-chart-grid: #ececea; --cds-chart-axis: #b9bab5; --cds-chart-reference: #8b8d93; --cds-chart-muted: #c9cbcf;
+  --cds-surface-popover: #ffffff; --cds-border: #dcdcd8; --cds-shadow-popover: 0 6px 20px rgba(20, 24, 32, .12);
+  --cds-text-secondary: #5b606b;
+  --font-anthropic-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-anthropic-serif: "Newsreader", Georgia, "Times New Roman", serif;
+  --cds-font-size-caption: 0.8125rem; --cds-font-size-body: 0.9375rem; --cds-font-size-heading: 1rem; --cds-font-size-title: 1.75rem;
+  --cds-font-weight-medium: 500;
+  --cds-gap-xs: 4px; --cds-gap-sm: 8px; --cds-gap-md: 16px; --cds-gap-lg: 24px; --cds-gap-xl: 32px;
+  --cds-pad-xs: 4px; --cds-pad-sm: 8px; --cds-pad-md: 12px; --cds-pad-lg: 18px; --cds-pad-xl: 28px;
+  --cds-radius: 8px; --cds-dur-slow: 300ms;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #111317; --color-panel: #1a1d22; --color-fg: #eceef1; --color-fg-muted: #a3a8b2;
+    --color-border-line: #2c3038; --color-ok: #56c17f; --color-warn: #e0a641; --color-bad: #ee7a78;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #9085e9;
+    --cds-chart-grid: #262a31; --cds-chart-axis: #4a4f59; --cds-chart-reference: #8a909b; --cds-chart-muted: #4b515c;
+    --cds-surface-popover: #22262c; --cds-border: #353a43; --cds-shadow-popover: 0 6px 20px rgba(0, 0, 0, .45);
+    --cds-text-secondary: #a3a8b2;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--color-bg); color: var(--color-fg); font-family: var(--font-anthropic-sans); font-size: 15px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0 48px; }
+#dash-root { max-width: 1200px; margin-inline: auto; }
+.site-bar { max-width: 1200px; margin-inline: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  padding-block: 18px 22px; font-size: 0.8125rem; color: var(--color-fg-muted); }
+.site-bar a { color: var(--color-fg); text-decoration: none; border-bottom: 1px solid var(--color-border-line); }
+.site-bar a:hover, .site-bar a:focus-visible { border-bottom-color: var(--color-fg); }
+.site-bar nav { display: flex; flex-wrap: wrap; gap: 16px; }
+.site-foot { max-width: 1200px; margin: 40px auto 0; font-size: 0.8125rem; color: var(--color-fg-muted); line-height: 1.6; border-top: 1px solid var(--color-border-line); padding-top: 16px; }
+.site-foot a { color: var(--color-fg); }
+#dash-root .dash-skeleton { color: transparent; }
+
+#dash-root .el-wrap { display: flex; flex-direction: column; gap: var(--cds-gap-lg); font-family: var(--font-anthropic-sans); color: var(--color-fg); }
+#dash-root .el-head { display: flex; flex-direction: column; gap: var(--cds-gap-xs); }
+#dash-root .el-title { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; text-wrap: balance; }
+#dash-root .el-takeaway { color: var(--color-fg-muted); font-size: var(--cds-font-size-body); margin: 0; max-width: 72ch; line-height: 1.5; }
+#dash-root .el-takeaway b, #dash-root .el-note b { font-weight: 600; color: var(--color-fg); }
+#dash-root .el-tabs { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xs); border-bottom: 1px solid var(--color-border-line); }
+#dash-root .el-tab { appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; padding: var(--cds-pad-sm) var(--cds-pad-md); font: inherit; font-size: var(--cds-font-size-body); color: var(--color-fg-muted); cursor: pointer; margin-bottom: -1px; }
+#dash-root .el-tab[aria-selected="true"] { color: var(--color-fg); border-bottom-color: var(--color-fg); font-weight: var(--cds-font-weight-medium); }
+#dash-root .el-tab:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+#dash-root .el-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr)); gap: var(--cds-gap-md); }
+#dash-root .el-kpi { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-md) var(--cds-pad-lg); display: flex; flex-direction: column; gap: var(--cds-gap-xs); min-width: 0; }
+#dash-root .el-kpi-label { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+#dash-root .el-kpi-value { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); font-variant-numeric: tabular-nums; line-height: 1.1; }
+#dash-root .el-kpi-sub { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); font-variant-numeric: tabular-nums; }
+#dash-root .el-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr)); gap: var(--cds-gap-md); }
+#dash-root .el-card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: flex; flex-direction: column; gap: var(--cds-gap-sm); min-width: 0; position: relative; }
+#dash-root .el-card.el-wide { grid-column: 1 / -1; }
+#dash-root .el-card h3 { margin: 0; font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); }
+#dash-root .el-note { margin: 0; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); line-height: 1.5; }
+#dash-root .el-chart { min-height: 260px; position: relative; }
+#dash-root .el-chart.el-tall { min-height: 420px; }
+#dash-root .el-legend { display: flex; flex-wrap: wrap; gap: var(--cds-gap-md); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+#dash-root .el-legend span { display: inline-flex; align-items: center; gap: 6px; }
+#dash-root .el-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+#dash-root .el-legend i.el-line { height: 2px; border-radius: 1px; width: 14px; }
+#dash-root .el-tablebox { overflow: auto; max-height: 26rem; }
+#dash-root table.el-table { width: 100%; min-width: 30rem; border-collapse: collapse; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+#dash-root .el-table th { position: sticky; top: 0; background: var(--color-panel); text-align: right; font-weight: var(--cds-font-weight-medium); color: var(--color-fg-muted); padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); white-space: nowrap; }
+#dash-root .el-table td { text-align: right; padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); white-space: nowrap; }
+#dash-root .el-table th:first-child, #dash-root .el-table td:first-child { text-align: left; }
+#dash-root .el-table td.el-text, #dash-root .el-table th.el-text { text-align: left; white-space: nowrap; }
+#dash-root .el-pill { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--color-border-line); font-size: var(--cds-font-size-caption); }
+#dash-root .el-pill.el-good { color: var(--color-ok); }
+#dash-root .el-pill.el-warn { color: var(--color-warn); }
+#dash-root .el-pill.el-bad { color: var(--color-bad); }
+#dash-root .el-controls { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: center; font-size: var(--cds-font-size-caption); }
+#dash-root .el-controls select { font: inherit; padding: 4px 8px; border-radius: var(--cds-radius); border: 1px solid var(--color-border-line); background: var(--color-bg); color: var(--color-fg); }
+#dash-root .el-tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); white-space: nowrap; z-index: 5; font-variant-numeric: tabular-nums; }
+#dash-root .el-tip .el-tip-h { color: var(--cds-text-secondary); margin-bottom: 2px; }
+#dash-root .el-tip .el-tip-r { display: flex; align-items: center; gap: 6px; }
+#dash-root .el-tip .el-tip-r i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+#dash-root .el-fail { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: inherit; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+#dash-root .el-fail::before { content: ""; width: .375rem; height: .375rem; border-radius: 50%; background: var(--color-bad); }
+#dash-root [data-dash-source-state=empty] { color: transparent; }
+#dash-root [data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+#dash-root .el-section[hidden] { display: none !important; }
+#dash-root svg text { fill: var(--color-fg-muted); font-size: 11px; font-family: var(--font-anthropic-sans); }
+#dash-root svg .el-val { fill: var(--color-fg); }
+</style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script>
+// Embedded results (written by build_site.py from reports/). Do not edit by hand.
+window.EL_DATA = /*__DATA__*/{};
+// Minimal stand-in for the dashboard API the charts are written against.
+window.dash = (() => {
+  const subs = [];
+  let t;
+  window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => subs.forEach((f) => f()), 150); });
+  return {
+    data: (id) => (id in window.EL_DATA ? { status: 'ok', data: window.EL_DATA[id] } : { status: 'missing', data: [] }),
+    onData: (fn) => { subs.push(fn); fn(); },
+    colors: ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)'],
+    setLink: (name) => { try { history.replaceState(null, '', '#' + name); } catch (e) { /* file:// */ } },
+  };
+})();
+</script>
+</head>
+<body>
+<header class="site-bar">
+  <span>Harshath Udayakumar · Credit risk portfolio project</span>
+  <nav aria-label="Project links">
+    <a href="https://github.com/harshath1234/credit-risk-expected-loss">Code and write-up on GitHub</a>
+    <a href="https://harshath-udayakumar-portfolio.netlify.app/">Portfolio</a>
+  </nav>
+</header>
+<main id="dash-root">
+
+<div class="el-wrap">
+  <header class="el-head" id="top">
+    <h1 class="el-title">Lending Club expected loss model</h1>
+    <p class="el-takeaway" id="takeaway">
+      The scorecard ranks 2015 borrowers with a Gini of
+      <b data-source="summary" data-field="gini" data-where="sample=oot" class="dash-skeleton">—</b>
+      and a stable score distribution (PSI
+      <b data-source="summary" data-field="psi" data-where="sample=oot" class="dash-skeleton">—</b>),
+      but 2015 defaults ran above prediction, so expected loss covered
+      <b data-source="summary" data-field="el_to_realised" data-where="sample=oot" class="dash-skeleton">—</b>
+      of realised loss. Recalibrate the PD before using it for provisioning.
+    </p>
+  </header>
+
+  <nav class="el-tabs" role="tablist" aria-label="Sections">
+    <button class="el-tab" role="tab" id="tab-overview" data-tab="overview" aria-selected="true">Overview</button>
+    <button class="el-tab" role="tab" id="tab-scorecard" data-tab="scorecard" aria-selected="false">PD scorecard</button>
+    <button class="el-tab" role="tab" id="tab-validation" data-tab="validation" aria-selected="false">Validation</button>
+    <button class="el-tab" role="tab" id="tab-lgdead" data-tab="lgdead" aria-selected="false">LGD and EAD</button>
+    <button class="el-tab" role="tab" id="tab-el" data-tab="el" aria-selected="false">Expected loss</button>
+  </nav>
+
+  <!-- ================= OVERVIEW ================= -->
+  <section class="el-section" id="overview" data-section="overview">
+    <div class="el-wrap">
+      <div class="el-kpis">
+        <div class="el-kpi" id="kpi-gini"><span class="el-kpi-label">Gini, out-of-time 2015</span>
+          <span class="el-kpi-value dash-skeleton" data-source="summary" data-field="gini" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub">Train <span data-source="summary" data-field="gini" data-where="sample=train">—</span></span></div>
+        <div class="el-kpi" id="kpi-ks"><span class="el-kpi-label">KS, out-of-time 2015</span>
+          <span class="el-kpi-value dash-skeleton" data-source="summary" data-field="ks" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub">Train <span data-source="summary" data-field="ks" data-where="sample=train">—</span></span></div>
+        <div class="el-kpi" id="kpi-psi"><span class="el-kpi-label">Score PSI, train → 2015</span>
+          <span class="el-kpi-value dash-skeleton" data-source="summary" data-field="psi" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub"><span class="el-pill el-good" id="psi-pill">—</span></span></div>
+        <div class="el-kpi" id="kpi-pd"><span class="el-kpi-label">Mean PD vs bad rate, 2015</span>
+          <span class="el-kpi-value dash-skeleton" data-source="summary" data-field="mean_pd" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub">Actual <span data-source="summary" data-field="bad_rate" data-where="sample=oot">—</span></span></div>
+        <div class="el-kpi" id="kpi-el"><span class="el-kpi-label">Expected loss, 2015 cohort</span>
+          <span class="el-kpi-value dash-skeleton" data-source="summary" data-field="el_pct" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub"><span data-source="summary" data-field="expected_loss" data-where="sample=oot">—</span> of <span data-source="summary" data-field="exposure" data-where="sample=oot">—</span> funded</span></div>
+        <div class="el-kpi" id="kpi-backtest"><span class="el-kpi-label">EL ÷ realised loss, 2015</span>
+          <span class="el-kpi-value dash-skeleton" data-source="summary" data-field="el_to_realised" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub">Realised <span data-source="summary" data-field="realised_pct" data-where="sample=oot">—</span> · train <span data-source="summary" data-field="el_to_realised" data-where="sample=train">—</span></span></div>
+      </div>
+
+      <div class="el-grid">
+        <div class="el-card" id="card-vintages">
+          <h3>Bad rate by issue year</h3>
+          <p class="el-note">36-month loans with a resolved outcome. 2016+ is excluded: only part of each cohort had finished by Dec 2018, so its bad rate is biased.</p>
+          <div class="el-legend" id="leg-vintages"></div>
+          <div class="el-chart" id="ch-vintages" data-source="vintages"></div>
+        </div>
+        <div class="el-card" id="card-elgrade">
+          <h3>Expected vs realised loss by grade, 2015</h3>
+          <p class="el-note">% of funded amount. The scorecard leaves out Lending Club's own grade, so it over-predicts A and under-predicts D–G.</p>
+          <div class="el-legend" id="leg-elgrade"></div>
+          <div class="el-chart" id="ch-elgrade" data-source="el_grade"></div>
+        </div>
+        <div class="el-card el-wide" id="card-bench">
+          <h3>Model comparison</h3>
+          <p class="el-note">The scorecard is the main model. The benchmarks show what interpretability costs (LightGBM) and how much Lending Club's own grade adds.</p>
+          <div class="el-tablebox">
+            <table class="el-table" id="tb-bench" data-source="benchmarks" data-row-key="model,sample">
+              <thead><tr><th class="el-text" data-field="model">Model</th><th data-field="sample">Sample</th><th data-field="gini">Gini</th><th data-field="auc">AUC</th><th data-field="ks">KS</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SCORECARD ================= -->
+  <section class="el-section" id="scorecard" data-section="scorecard" hidden>
+    <div class="el-grid">
+      <div class="el-card" id="card-iv">
+        <h3>Information value by candidate feature</h3>
+        <p class="el-note">IV = Σ (%good − %bad) × WoE on the coarse bins, train 2013–14. Below 0.02 is dropped; all are "weak" (&lt; 0.1) because this data has no FICO score.</p>
+        <div class="el-legend" id="leg-iv"></div>
+        <div class="el-chart el-tall" id="ch-iv" data-source="iv"></div>
+      </div>
+      <div class="el-card" id="card-coef">
+        <h3>Logistic regression on WoE features</h3>
+        <p class="el-note">Statsmodels Logit. With WoE = ln(%good/%bad), every coefficient should be negative. All final features are, and all are significant.</p>
+        <div class="el-tablebox">
+          <table class="el-table" id="tb-coef" data-source="coefficients" data-row-key="feature">
+            <thead><tr><th class="el-text" data-field="feature">Feature</th><th data-field="coef">Coefficient</th><th data-field="std_err">Std. error</th><th data-field="p_value">p-value</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="el-card el-wide" id="card-points">
+        <h3>Scorecard points</h3>
+        <p class="el-note">PDO 20, 600 points at 50:1 good:bad odds. An applicant's score is the sum of one bin's points per feature; higher scores mean lower PD.</p>
+        <div class="el-controls">
+          <label for="sel-feature">Feature</label>
+          <select id="sel-feature" data-source="points"></select>
+        </div>
+        <div class="el-tablebox">
+          <table class="el-table" id="tb-points" data-source="points" data-row-key="feature,bin">
+            <thead><tr><th class="el-text" data-field="feature">Feature</th><th class="el-text" data-field="bin">Bin</th><th data-field="woe">WoE</th><th data-field="points">Points</th><th data-field="share_train">Share of loans</th><th data-field="bad_rate_train">Bad rate</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= VALIDATION ================= -->
+  <section class="el-section" id="validation" data-section="validation" hidden>
+    <div class="el-grid">
+      <div class="el-card el-wide" id="card-metrics">
+        <h3>Train vs out-of-time</h3>
+        <p class="el-note">Discrimination holds in 2015. Calibration doesn't: the bad rate rose year on year and Hosmer–Lemeshow rejects in 2015.</p>
+        <div class="el-tablebox">
+          <table class="el-table" id="tb-metrics" data-source="summary" data-row-key="sample">
+            <thead><tr><th class="el-text" data-field="label">Sample</th><th data-field="loans">Loans</th><th data-field="bad_rate">Bad rate</th><th data-field="mean_pd">Mean PD</th><th data-field="auc">AUC</th><th data-field="gini">Gini</th><th data-field="ks">KS</th><th data-field="brier">Brier</th><th data-field="hl_p">H–L p-value</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="el-card" id="card-cal">
+        <h3>Calibration by PD decile</h3>
+        <p class="el-note">Points on the dashed line are perfectly calibrated. 2015 sits above it: actual defaults ran above prediction in almost every decile.</p>
+        <div class="el-legend" id="leg-cal"></div>
+        <div class="el-chart" id="ch-cal" data-source="calibration"></div>
+      </div>
+      <div class="el-card" id="card-gains">
+        <h3>Bad rate by score decile, 2015</h3>
+        <p class="el-note">Decile 1 = lowest scores. The bad rate falls in every decile, so the score ranks risk consistently.</p>
+        <div class="el-chart" id="ch-gains" data-source="gains"></div>
+      </div>
+      <div class="el-card" id="card-psi">
+        <h3>Score distribution, train vs 2015</h3>
+        <p class="el-note">Bands are train deciles. PSI &lt; 0.10 is stable, 0.10–0.25 monitor, &gt; 0.25 significant shift.</p>
+        <div class="el-legend" id="leg-psi"></div>
+        <div class="el-chart" id="ch-psi" data-source="psi"></div>
+      </div>
+      <div class="el-card" id="card-csi">
+        <h3>Feature stability (CSI)</h3>
+        <p class="el-note">PSI computed on each scorecard feature's bins. All are far below 0.10, so the applicants didn't change; their outcomes did.</p>
+        <div class="el-chart" id="ch-csi" data-source="csi"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LGD / EAD ================= -->
+  <section class="el-section" id="lgdead" data-section="lgdead" hidden>
+    <div class="el-grid">
+      <div class="el-card" id="card-lgdhist">
+        <h3>Realised LGD on defaulted loans</h3>
+        <p class="el-note">Train 2013–14 defaults. LGD = 1 − recoveries ÷ principal outstanding. Most recover 10–15% (charged-off debt is sold); a large group recovers nothing.</p>
+        <div class="el-chart" id="ch-lgdhist" data-source="lgd_hist"></div>
+      </div>
+      <div class="el-card" id="card-lgdgrade">
+        <h3>LGD by grade, 2015 defaults</h3>
+        <p class="el-note">Actual LGD is flat across grades, so borrower data at origination says little about recovery.</p>
+        <div class="el-legend" id="leg-lgdgrade"></div>
+        <div class="el-chart" id="ch-lgdgrade" data-source="lgd_ead_by_grade"></div>
+      </div>
+      <div class="el-card" id="card-eadgrade">
+        <h3>Share of loan outstanding at default, 2015</h3>
+        <p class="el-note">EAD ratio = (funded − principal repaid) ÷ funded. Riskier grades default earlier, with more still owed.</p>
+        <div class="el-legend" id="leg-eadgrade"></div>
+        <div class="el-chart" id="ch-eadgrade" data-source="lgd_ead_by_grade"></div>
+      </div>
+      <div class="el-card" id="card-lgdmodels">
+        <h3>Models vs simple baselines, 2015 defaults</h3>
+        <p class="el-note">The two-stage LGD model barely beats a flat average. EAD's R² comes mostly from loan size.</p>
+        <div class="el-tablebox">
+          <table class="el-table" id="tb-lgdmodels" data-source="lgd_ead_models" data-row-key="component,model">
+            <thead><tr><th class="el-text" data-field="component">Model of</th><th class="el-text" data-field="model">Approach</th><th data-field="mean_actual">Actual</th><th data-field="mean_pred">Predicted</th><th data-field="rmse">RMSE</th><th data-field="r2">R²</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= EXPECTED LOSS ================= -->
+  <section class="el-section" id="el" data-section="el" hidden>
+    <div class="el-wrap">
+      <div class="el-kpis">
+        <div class="el-kpi"><span class="el-kpi-label">Expected loss, 2015</span>
+          <span class="el-kpi-value" data-source="summary" data-field="expected_loss" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub"><span data-source="summary" data-field="el_pct" data-where="sample=oot">—</span> of funded</span></div>
+        <div class="el-kpi"><span class="el-kpi-label">Realised loss, 2015</span>
+          <span class="el-kpi-value" data-source="summary" data-field="realised_loss" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub"><span data-source="summary" data-field="realised_pct" data-where="sample=oot">—</span> of funded</span></div>
+        <div class="el-kpi"><span class="el-kpi-label">PD: predicted ÷ actual</span>
+          <span class="el-kpi-value" data-source="summary" data-field="pd_ratio" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub">Main source of the gap</span></div>
+        <div class="el-kpi"><span class="el-kpi-label">EAD: predicted ÷ actual</span>
+          <span class="el-kpi-value" data-source="summary" data-field="ead_ratio" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub">Defaulted loans</span></div>
+        <div class="el-kpi"><span class="el-kpi-label">LGD: predicted ÷ actual</span>
+          <span class="el-kpi-value" data-source="summary" data-field="lgd_ratio" data-where="sample=oot">—</span>
+          <span class="el-kpi-sub">Exposure-weighted</span></div>
+      </div>
+      <div class="el-grid">
+        <div class="el-card el-wide" id="card-elband">
+          <h3>Expected vs realised loss by score decile, 2015</h3>
+          <p class="el-note">% of funded amount. Decile 1 = lowest scores. EL ranks loss well but sits below realised loss in every decile.</p>
+          <div class="el-legend" id="leg-elband"></div>
+          <div class="el-chart" id="ch-elband" data-source="el_band"></div>
+        </div>
+        <div class="el-card" id="card-stress">
+          <h3>Stress test, 2015 portfolio</h3>
+          <p class="el-note">Expected loss as % of funded under each shock. LGD is already high, so +10 points moves EL less than PD × 1.5.</p>
+          <div class="el-chart" id="ch-stress" data-source="stress"></div>
+        </div>
+        <div class="el-card" id="card-mc">
+          <h3>Monte Carlo portfolio loss</h3>
+          <p class="el-note">Simulated losses on the 2015 cohort with Bernoulli defaults at each loan's PD. ρ = 0.10 is an assumed asset correlation (Vasicek, as in Basel IRB), not an estimate.</p>
+          <div class="el-tablebox">
+            <table class="el-table" id="tb-mc" data-source="monte_carlo" data-row-key="scenario">
+              <thead><tr><th class="el-text" data-field="scenario">Defaults</th><th data-field="analytic_el">Expected loss</th><th data-field="q99">99th percentile</th><th data-field="ul_99">Unexpected loss (99%)</th><th data-field="q999">99.9th percentile</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="el-card el-wide" id="card-cohort">
+          <h3>Cumulative default rate by issue-year cohort</h3>
+          <p class="el-note">Months on book to the last payment before charge-off. Each newer cohort defaults faster, the same drift that breaks 2015 calibration.</p>
+          <div class="el-legend" id="leg-cohort"></div>
+          <div class="el-chart" id="ch-cohort" data-source="cohorts"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+</main>
+<footer class="site-foot">
+  Data: Lending Club loans issued 2013–2015 (Kaggle "Lending Club Loan Data"), individual 36-month loans with a resolved outcome.
+  Amounts in US dollars. Train = 2013–14 issues, out-of-time test = 2015 issues. Every figure is generated by
+  <code>run_all.py</code> and embedded by <code>build_site.py</code>; see the
+  <a href="https://github.com/harshath1234/credit-risk-expected-loss#readme">README</a> for method, assumptions and limitations.
+  A portfolio project, not a bank-approved model.
+</footer>
+<script>
+(() => {
+  const root = document.getElementById('dash-root');
+  const F = {
+    pct1: d3.format('.1%'), pct2: d3.format('.2%'), pct0: d3.format('.0%'),
+    n3: d3.format('.3f'), n4: d3.format('.4f'), n2: d3.format('.2f'), int: d3.format(','),
+    usdM: (v) => '$' + d3.format(',.1f')(v / 1e6) + 'm',
+    usdB: (v) => '$' + d3.format(',.2f')(v / 1e9) + 'bn',
+    usd: (v) => '$' + d3.format(',.0f')(v),
+    p: (v) => v < 0.0001 ? '< 0.0001' : d3.format('.4f')(v),
+    x: (v) => d3.format('.2f')(v) + '×',
+  };
+  const C = () => dash.colors;
+  window.elF = F;
+
+  // ---------- helpers ----------
+  const rowsOf = (id) => { const d = dash.data(id); return d.status === 'ok' ? d.data : null; };
+  const stateOf = (id) => dash.data(id).status;
+  function fail(el) { el.replaceChildren(); const d = document.createElement('div'); d.className = 'el-fail'; d.textContent = 'Failed to load'; el.appendChild(d); }
+  function guard(el, id) {
+    const st = stateOf(id);
+    if (st === 'ok') { el.classList.remove('dash-skeleton'); return rowsOf(id); }
+    if (st === 'error' || st === 'connect' || st === 'declined' || st === 'missing') { el.classList.remove('dash-skeleton'); fail(el); return null; }
+    el.replaceChildren(); el.classList.add('dash-skeleton'); return null;
+  }
+  function legend(el, items) {
+    el.replaceChildren(...items.map(([label, color, line]) => {
+      const s = document.createElement('span'); const i = document.createElement('i');
+      if (line) i.className = 'el-line'; i.style.background = color; s.append(i, document.createTextNode(label)); return s;
+    }));
+  }
+  function tip(el) {
+    let t = el.querySelector(':scope > .el-tip');
+    if (!t) { t = document.createElement('div'); t.className = 'el-tip'; t.hidden = true; el.appendChild(t); }
+    return {
+      show(event, head, lines) {
+        t.replaceChildren();
+        const h = document.createElement('div'); h.className = 'el-tip-h'; h.textContent = head; t.appendChild(h);
+        lines.forEach(([c, name, val]) => {
+          const r = document.createElement('div'); r.className = 'el-tip-r';
+          if (c) { const i = document.createElement('i'); i.style.background = c; r.appendChild(i); }
+          r.appendChild(document.createTextNode(name ? name + ': ' + val : val)); t.appendChild(r);
+        });
+        t.hidden = false;
+        const [mx, my] = d3.pointer(event, el);
+        const w = t.offsetWidth, h2 = t.offsetHeight;
+        let x = mx + 12; if (x + w > el.clientWidth) x = Math.max(0, mx - w - 12);
+        let y = my - h2 - 8; if (y < 0) y = my + 12;
+        t.style.left = x + 'px'; t.style.top = y + 'px';
+      },
+      hide() { t.hidden = true; },
+    };
+  }
+  function measure(svg, texts) {
+    const g = svg.append('g'); let m = 0;
+    texts.forEach((s) => { const n = g.append('text').text(s); m = Math.max(m, n.node().getComputedTextLength()); });
+    g.remove(); return m;
+  }
+  function newSvg(el, height) {
+    el.querySelectorAll(':scope > svg').forEach((n) => n.remove());
+    const W = Math.max(280, el.clientWidth);
+    const svg = d3.select(el).insert('svg', ':first-child').attr('width', '100%').attr('viewBox', `0 0 ${W} ${height}`).attr('height', height);
+    return { svg, W, H: height };
+  }
+  function yAxis(g, y, fmt, W, left, ticks = 5) {
+    g.append('g').selectAll('line').data(y.ticks(ticks)).join('line')
+      .attr('x1', left).attr('x2', W).attr('y1', y).attr('y2', y).style('stroke', 'var(--cds-chart-grid)');
+    g.append('g').selectAll('text').data(y.ticks(ticks)).join('text')
+      .attr('x', left - 6).attr('y', y).attr('dy', '0.32em').attr('text-anchor', 'end').text(fmt);
+  }
+
+  // Grouped vertical bars. series: [{key, label, color}]
+  function bars(el, rows, { x, xFmt = String, series, yFmt, height = 260, xTitle, colorFn, tipHead, allTicks }) {
+    const { svg, W, H } = newSvg(el, height);
+    const maxV = d3.max(rows, (r) => d3.max(series, (s) => r[s.key])) || 1;
+    const y0 = d3.scaleLinear([0, maxV * 1.08], [H - 34, 10]).nice();
+    const left = measure(svg, y0.ticks(5).map(yFmt)) + 12;
+    const xb = d3.scaleBand(rows.map((r) => r[x]), [left, W - 4]).padding(0.25);
+    const xi = d3.scaleBand(series.map((s) => s.key), [0, xb.bandwidth()]).padding(0.08);
+    yAxis(svg, y0, yFmt, W, left);
+    svg.append('line').attr('x1', left).attr('x2', W).attr('y1', y0(0)).attr('y2', y0(0)).style('stroke', 'var(--cds-chart-axis)');
+    const step = allTicks ? 1 : Math.ceil(rows.length / Math.max(1, Math.floor((W - left) / 38)));
+    svg.append('g').selectAll('text').data(rows.filter((_, i) => i % step === 0)).join('text')
+      .attr('x', (r) => xb(r[x]) + xb.bandwidth() / 2).attr('y', H - 18).attr('text-anchor', 'middle').text((r) => xFmt(r[x]));
+    if (xTitle) svg.append('text').attr('x', left + (W - left) / 2).attr('y', H - 2).attr('text-anchor', 'middle').text(xTitle);
+    const tt = tip(el);
+    const groups = svg.append('g').selectAll('g').data(rows).join('g').attr('transform', (r) => `translate(${xb(r[x])},0)`);
+    groups.selectAll('rect').data((r) => series.map((s) => ({ r, s }))).join('rect')
+      .attr('x', (d) => xi(d.s.key)).attr('width', Math.min(32, xi.bandwidth()))
+      .attr('y', (d) => y0(d.r[d.s.key])).attr('height', (d) => Math.max(0, y0(0) - y0(d.r[d.s.key])))
+      .attr('rx', 4).style('fill', (d) => colorFn ? colorFn(d.r, d.s) : d.s.color);
+    groups.append('rect').attr('x', 0).attr('width', xb.bandwidth()).attr('y', 0).attr('height', H - 34).style('fill', 'transparent')
+      .on('mousemove', (ev, r) => tt.show(ev, tipHead ? tipHead(r) : xFmt(r[x]), series.map((s) => [series.length > 1 ? (colorFn ? colorFn(r, s) : s.color) : null, series.length > 1 ? s.label : s.label, yFmt(r[s.key])])))
+      .on('mouseleave', () => tt.hide());
+  }
+
+  // Horizontal bars, one value per row.
+  function hbars(el, rows, { y, x, fmt, colorFn, rowH = 18, tipLines }) {
+    const H = rows.length * rowH + 28;
+    const { svg, W } = newSvg(el, H);
+    const left = measure(svg, rows.map((r) => r[y])) + 10;
+    const maxV = d3.max(rows, (r) => r[x]) || 1;
+    const valW = measure(svg, rows.map((r) => fmt(r[x]))) + 8;
+    const xs = d3.scaleLinear([0, maxV], [left, W - valW]);
+    const yb = d3.scaleBand(rows.map((r) => r[y]), [4, H - 24]).padding(0.2);
+    svg.append('g').selectAll('line').data(xs.ticks(4)).join('line').attr('x1', xs).attr('x2', xs).attr('y1', 4).attr('y2', H - 24).style('stroke', 'var(--cds-chart-grid)');
+    svg.append('g').selectAll('text').data(xs.ticks(4)).join('text').attr('x', xs).attr('y', H - 8).attr('text-anchor', 'middle').text(fmt);
+    svg.append('g').selectAll('text').data(rows).join('text').attr('x', left - 6).attr('y', (r) => yb(r[y]) + yb.bandwidth() / 2).attr('dy', '0.32em').attr('text-anchor', 'end').text((r) => r[y]);
+    svg.append('g').selectAll('rect').data(rows).join('rect').attr('x', left).attr('y', (r) => yb(r[y])).attr('height', yb.bandwidth())
+      .attr('width', (r) => Math.max(1, xs(r[x]) - left)).attr('rx', 3).style('fill', (r) => colorFn(r));
+    svg.append('g').selectAll('text').data(rows).join('text').attr('class', 'el-val').attr('x', (r) => xs(r[x]) + 4).attr('y', (r) => yb(r[y]) + yb.bandwidth() / 2).attr('dy', '0.32em').text((r) => fmt(r[x]));
+    const tt = tip(el);
+    svg.append('g').selectAll('rect').data(rows).join('rect').attr('x', 0).attr('width', W).attr('y', (r) => yb(r[y]) - 2).attr('height', yb.bandwidth() + 4).style('fill', 'transparent')
+      .on('mousemove', (ev, r) => tt.show(ev, r[y], tipLines(r))).on('mouseleave', () => tt.hide());
+  }
+
+  // Lines. series: [{label, color, points:[{x,y}]}]
+  function lines(el, series, { xFmt, yFmt, xDomain, yDomain, diagonal, height = 260, xTitle, endLabels }) {
+    const { svg, W, H } = newSvg(el, height);
+    const y = d3.scaleLinear(yDomain, [H - 34, 10]).nice();
+    const left = measure(svg, y.ticks(5).map(yFmt)) + 12;
+    const right = endLabels ? measure(svg, series.map((s) => s.label)) + 10 : 8;
+    const x = d3.scaleLinear(xDomain, [left, W - right]);
+    yAxis(svg, y, yFmt, W - right, left);
+    svg.append('g').selectAll('text').data(x.ticks(Math.max(2, Math.floor((W - left - right) / 70)))).join('text')
+      .attr('x', x).attr('y', H - 18).attr('text-anchor', 'middle').text(xFmt);
+    if (xTitle) svg.append('text').attr('x', left + (W - left - right) / 2).attr('y', H - 2).attr('text-anchor', 'middle').text(xTitle);
+    if (diagonal) {
+      const m = Math.min(xDomain[1], y.domain()[1]);
+      svg.append('line').attr('x1', x(0)).attr('y1', y(0)).attr('x2', x(m)).attr('y2', y(m)).style('stroke', 'var(--cds-chart-reference)').attr('stroke-dasharray', '4 4');
+    }
+    const ln = d3.line().x((p) => x(p.x)).y((p) => y(p.y));
+    series.forEach((s) => {
+      svg.append('path').attr('d', ln(s.points)).style('fill', 'none').style('stroke', s.color).attr('stroke-width', 2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+      if (s.dots) svg.append('g').selectAll('circle').data(s.points).join('circle').attr('cx', (p) => x(p.x)).attr('cy', (p) => y(p.y)).attr('r', 3.5).style('fill', s.color);
+    });
+    if (endLabels) {
+      const ends = series.map((s) => ({ s, yy: y(s.points[s.points.length - 1].y) })).sort((a, b) => a.yy - b.yy);
+      for (let i = 1; i < ends.length; i++) if (ends[i].yy - ends[i - 1].yy < 13) ends[i].yy = ends[i - 1].yy + 13;
+      svg.append('g').selectAll('text').data(ends).join('text').attr('class', 'el-val').attr('x', W - right + 6).attr('y', (d) => d.yy).attr('dy', '0.32em').text((d) => d.s.label);
+    }
+    const tt = tip(el);
+    const focus = svg.append('line').style('stroke', 'var(--cds-chart-axis)').attr('y1', 10).attr('y2', H - 34).attr('visibility', 'hidden');
+    svg.append('rect').attr('x', left).attr('width', Math.max(0, W - right - left)).attr('y', 0).attr('height', H - 34).style('fill', 'transparent')
+      .on('mousemove', (ev) => {
+        const [mx] = d3.pointer(ev); const xv = x.invert(mx);
+        const near = series.map((s) => s.points.reduce((a, b) => Math.abs(b.x - xv) < Math.abs(a.x - xv) ? b : a));
+        focus.attr('x1', x(near[0].x)).attr('x2', x(near[0].x)).attr('visibility', 'visible');
+        tt.show(ev, xFmt(near[0].x), series.map((s, i) => [s.color, s.label, (s.tipFmt || yFmt)(near[i].y) + (s.tipExtra ? s.tipExtra(near[i]) : '')]));
+      })
+      .on('mouseleave', () => { tt.hide(); focus.attr('visibility', 'hidden'); });
+  }
+
+  function table(tb, rows, cols) {
+    const body = tb.tBodies[0];
+    body.replaceChildren(...rows.map((r) => {
+      const tr = document.createElement('tr');
+      cols.forEach(([k, fmt, cls]) => { const td = document.createElement('td'); if (cls) td.className = cls; td.textContent = fmt ? fmt(r[k], r) : r[k]; tr.appendChild(td); });
+      return tr;
+    }));
+  }
+  function fillMarks() {
+    root.querySelectorAll('[data-source="summary"][data-field][data-where]').forEach((el) => {
+      const rows = rowsOf('summary');
+      if (!rows) { if (stateOf('summary') !== 'loading') el.classList.remove('dash-skeleton'); return; }
+      el.classList.remove('dash-skeleton');
+      const s = el.dataset.where.split('=')[1]; const r = rows.find((x) => x.sample === s); if (!r) return;
+      const f = el.dataset.field; const v = r[f];
+      const fmt = { gini: F.n3, ks: F.n3, auc: F.n3, psi: F.n4, mean_pd: F.pct1, bad_rate: F.pct1, el_pct: F.pct1, realised_pct: F.pct1,
+        el_to_realised: F.n2, expected_loss: F.usdM, realised_loss: F.usdM, exposure: F.usdB, pd_ratio: F.n3, ead_ratio: F.n3, lgd_ratio: F.n3 }[f] || F.n3;
+      el.textContent = fmt(v);
+    });
+    const s = rowsOf('summary');
+    const pill = document.getElementById('psi-pill');
+    if (s) { const v = s.find((r) => r.sample === 'oot').psi; pill.textContent = v < 0.1 ? 'Stable' : v < 0.25 ? 'Monitor' : 'Shift'; pill.className = 'el-pill ' + (v < 0.1 ? 'el-good' : v < 0.25 ? 'el-warn' : 'el-bad'); }
+    else pill.textContent = '—';
+  }
+
+  // ---------- sections ----------
+  const draw = {
+    overview() {
+      const c = C();
+      let el = document.getElementById('ch-vintages'); let rows = guard(el, 'vintages');
+      legend(document.getElementById('leg-vintages'), [['Train', c[0]], ['Out-of-time', c[1]], ['Excluded', 'var(--cds-chart-muted)']]);
+      if (rows) {
+        rows = rows.filter((r) => r.issue_year >= 2010);
+        const col = (r) => r.role === 'Train' ? c[0] : r.role === 'Out-of-time' ? c[1] : 'var(--cds-chart-muted)';
+        bars(el, rows, { x: 'issue_year', series: [{ key: 'bad_rate_resolved', label: 'Bad rate', color: c[0] }], yFmt: F.pct0, colorFn: (r) => col(r),
+          tipHead: (r) => `${r.issue_year} · ${r.role}` });
+      }
+      el = document.getElementById('ch-elgrade'); rows = guard(el, 'el_grade');
+      legend(document.getElementById('leg-elgrade'), [['Expected loss', c[0]], ['Realised loss', c[1]]]);
+      if (rows) bars(el, rows, { x: 'grade', series: [{ key: 'el_pct', label: 'Expected', color: c[0] }, { key: 'realised_pct', label: 'Realised', color: c[1] }], yFmt: F.pct0, tipHead: (r) => `Grade ${r.grade}` });
+      const tb = document.getElementById('tb-bench'); const b = rowsOf('benchmarks');
+      if (b) table(tb, b, [['model', null, 'el-text'], ['sample'], ['gini', F.n3], ['auc', F.n3], ['ks', F.n3]]);
+    },
+    scorecard() {
+      const c = C();
+      const el = document.getElementById('ch-iv'); const rows = guard(el, 'iv');
+      const st = { 'In scorecard': c[0], 'Correlated': c[2], 'Not significant': c[3], 'IV below 0.02': 'var(--cds-chart-muted)' };
+      legend(document.getElementById('leg-iv'), Object.entries(st).map(([k, v]) => [k, v]));
+      if (rows) hbars(el, [...rows].sort((a, b) => b.iv - a.iv), { y: 'feature', x: 'iv', fmt: F.n4, colorFn: (r) => st[r.status] || 'var(--cds-chart-muted)',
+        tipLines: (r) => [[null, 'IV', F.n4(r.iv)], [null, 'Bins', r.n_bins], [null, '', r.status]] });
+      const cf = rowsOf('coefficients');
+      if (cf) table(document.getElementById('tb-coef'), cf, [['feature', null, 'el-text'], ['coef', F.n3], ['std_err', F.n3], ['p_value', (v) => v < 1e-4 ? '< 0.0001' : F.n4(v)]]);
+      const pts = rowsOf('points'); const sel = document.getElementById('sel-feature');
+      if (pts) {
+        const feats = [...new Set(pts.map((p) => p.feature))];
+        const cur = sel.value || feats[0];
+        sel.replaceChildren(new Option('All features', '__all'), ...feats.map((f) => new Option(f, f)));
+        sel.value = feats.includes(cur) || cur === '__all' ? cur : feats[0];
+        const shown = sel.value === '__all' ? pts : pts.filter((p) => p.feature === sel.value);
+        table(document.getElementById('tb-points'), shown, [['feature', null, 'el-text'], ['bin', null, 'el-text'], ['woe', F.n3], ['points', (v) => String(v)], ['share_train', F.pct1], ['bad_rate_train', F.pct1]]);
+      }
+    },
+    validation() {
+      const c = C();
+      const s = rowsOf('summary');
+      if (s) table(document.getElementById('tb-metrics'), s, [['label', null, 'el-text'], ['loans', F.int], ['bad_rate', F.pct1], ['mean_pd', F.pct1], ['auc', F.n3], ['gini', F.n3], ['ks', F.n3], ['brier', F.n3], ['hl_p', F.p]]);
+      let el = document.getElementById('ch-cal'); let rows = guard(el, 'calibration');
+      legend(document.getElementById('leg-cal'), [['Train 2013–14', c[0], true], ['Out-of-time 2015', c[1], true], ['Perfect calibration', 'var(--cds-chart-reference)', true]]);
+      if (rows) {
+        const mk = (smp, label, color) => ({ label, color, dots: true, tipFmt: F.pct1, tipExtra: (p) => ` observed vs ${F.pct1(p.x)} predicted`,
+          points: rows.filter((r) => r.sample === smp).map((r) => ({ x: r.pd_mean, y: r.observed_rate })) });
+        const mx = d3.max(rows, (r) => Math.max(r.pd_mean, r.observed_rate));
+        lines(el, [mk('train', 'Train', c[0]), mk('oot', '2015', c[1])], { xFmt: F.pct0, yFmt: F.pct0, xDomain: [0, mx * 1.05], yDomain: [0, mx * 1.05], diagonal: true, xTitle: 'Mean predicted PD (decile)' });
+      }
+      el = document.getElementById('ch-gains'); rows = guard(el, 'gains');
+      if (rows) bars(el, rows, { x: 'band', series: [{ key: 'bad_rate', label: 'Bad rate', color: c[0] }], yFmt: F.pct0, xTitle: 'Score decile (1 = lowest score)',
+        tipHead: (r) => `Decile ${r.band} · score ${r.score_min}–${r.score_max}` });
+      el = document.getElementById('ch-psi'); rows = guard(el, 'psi');
+      legend(document.getElementById('leg-psi'), [['Train 2013–14', c[0]], ['Out-of-time 2015', c[1]]]);
+      if (rows) bars(el, rows, { x: 'band', series: [{ key: 'expected_pct', label: 'Train', color: c[0] }, { key: 'actual_pct', label: '2015', color: c[1] }], yFmt: F.pct0, xTitle: 'Score band (train deciles)', tipHead: (r) => `Band ${r.band}` });
+      el = document.getElementById('ch-csi'); rows = guard(el, 'csi');
+      if (rows) hbars(el, [...rows].sort((a, b) => b.csi - a.csi), { y: 'feature', x: 'csi', fmt: F.n3, colorFn: () => c[0], rowH: 22, tipLines: (r) => [[null, 'CSI', F.n4(r.csi)]] });
+    },
+    lgdead() {
+      const c = C();
+      let el = document.getElementById('ch-lgdhist'); let rows = guard(el, 'lgd_hist');
+      if (rows) bars(el, rows.map((r) => ({ ...r, bin: r.lgd_to })), { x: 'bin', xFmt: (v) => (Math.round(v * 100) % 20 === 0 ? F.pct0(v) : ''), series: [{ key: 'loans', label: 'Defaulted loans', color: c[0] }], allTicks: true,
+        yFmt: d3.format(','), xTitle: 'LGD (upper edge of 5-point bin)', tipHead: (r) => `LGD ${F.pct0(r.lgd_from)}–${F.pct0(r.lgd_to)}` });
+      el = document.getElementById('ch-lgdgrade'); rows = guard(el, 'lgd_ead_by_grade');
+      legend(document.getElementById('leg-lgdgrade'), [['Actual', c[0]], ['Predicted', c[1]]]);
+      if (rows) bars(el, rows, { x: 'grade', series: [{ key: 'lgd_actual', label: 'Actual', color: c[0] }, { key: 'lgd_pred', label: 'Predicted', color: c[1] }], yFmt: F.pct0, tipHead: (r) => `Grade ${r.grade} · ${F.int(r.n)} defaults` });
+      el = document.getElementById('ch-eadgrade'); rows = guard(el, 'lgd_ead_by_grade');
+      legend(document.getElementById('leg-eadgrade'), [['Actual', c[0]], ['Predicted', c[1]]]);
+      if (rows) bars(el, rows, { x: 'grade', series: [{ key: 'ead_ratio_actual', label: 'Actual', color: c[0] }, { key: 'ead_ratio_pred', label: 'Predicted', color: c[1] }], yFmt: F.pct0, tipHead: (r) => `Grade ${r.grade} · ${F.int(r.n)} defaults` });
+      const m = rowsOf('lgd_ead_models');
+      if (m) table(document.getElementById('tb-lgdmodels'), m, [['component', null, 'el-text'], ['model', null, 'el-text'],
+        ['mean_actual', (v, r) => r.component === 'LGD' ? F.pct1(v) : F.usd(v)], ['mean_pred', (v, r) => r.component === 'LGD' ? F.pct1(v) : F.usd(v)],
+        ['rmse', (v, r) => r.component === 'LGD' ? F.n4(v) : F.usd(v)], ['r2', F.n3]]);
+    },
+    el() {
+      const c = C();
+      let el = document.getElementById('ch-elband'); let rows = guard(el, 'el_band');
+      legend(document.getElementById('leg-elband'), [['Expected loss', c[0]], ['Realised loss', c[1]]]);
+      if (rows) bars(el, rows, { x: 'score_band', series: [{ key: 'el_pct', label: 'Expected', color: c[0] }, { key: 'realised_pct', label: 'Realised', color: c[1] }], yFmt: F.pct0, xTitle: 'Score decile (1 = lowest score)', tipHead: (r) => `Decile ${r.score_band} · mean PD ${F.pct1(r.mean_pd)}` });
+      el = document.getElementById('ch-stress'); rows = guard(el, 'stress');
+      if (rows) bars(el, rows, { x: 'scenario', series: [{ key: 'el_pct', label: 'EL % of funded', color: c[0] }], yFmt: F.pct0,
+        colorFn: (r) => r.scenario === 'Base' ? 'var(--cds-chart-muted)' : c[0], tipHead: (r) => `${r.scenario} · ${F.usdM(r.el)} (${r.vs_base >= 0 ? '+' : ''}${F.pct0(r.vs_base)} vs base)` });
+      const mc = rowsOf('monte_carlo');
+      if (mc) table(document.getElementById('tb-mc'), mc, [['scenario', null, 'el-text'], ['analytic_el', F.usdM], ['q99', F.usdM], ['ul_99', F.usdM], ['q999', F.usdM]]);
+      el = document.getElementById('ch-cohort'); rows = guard(el, 'cohorts');
+      if (rows) {
+        const years = [...new Set(rows.map((r) => r.issue_year))].sort();
+        legend(document.getElementById('leg-cohort'), years.map((y, i) => [String(y), c[i], true]));
+        const series = years.map((y, i) => ({ label: String(y), color: c[i], points: rows.filter((r) => r.issue_year === y).map((r) => ({ x: r.mob, y: r.cum_default_rate })) }));
+        lines(el, series, { xFmt: (v) => `${v} mo`, yFmt: F.pct0, xDomain: [0, 36], yDomain: [0, d3.max(rows, (r) => r.cum_default_rate)], xTitle: 'Months on book', endLabels: true });
+      }
+    },
+  };
+
+  // ---------- tabs ----------
+  const tabs = [...root.querySelectorAll('.el-tab')];
+  let current = 'overview';
+  function show(name, link = true) {
+    current = name;
+    tabs.forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === name)));
+    root.querySelectorAll('.el-section').forEach((s) => { s.hidden = s.dataset.section !== name; });
+    if (link) dash.setLink(name);
+    redraw();
+  }
+  tabs.forEach((t) => t.addEventListener('click', () => show(t.dataset.tab)));
+  document.getElementById('sel-feature').addEventListener('change', () => draw.scorecard());
+  function redraw() { fillMarks(); draw[current](); }
+  const start = location.hash.slice(1);
+  if (draw[start]) { current = start; tabs.forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === start))); root.querySelectorAll('.el-section').forEach((s) => { s.hidden = s.dataset.section !== start; }); }
+  dash.onData(redraw);
+})();
+</script>
+</body>
+</html>
